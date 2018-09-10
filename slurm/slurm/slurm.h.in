@@ -1435,6 +1435,7 @@ typedef struct job_descriptor {	/* For submit, allocate, and update requests */
 	uint64_t fed_siblings_active; /* Bitmap of active fed sibling ids */
 	uint64_t fed_siblings_viable; /* Bitmap of viable fed sibling ids */
 	uint32_t group_id;	/* group to assume, if run as root. */
+	char *hints;		/* to be used to decide which features to use */
 	uint16_t immediate;	/* 1 if allocate to run or fail immediately,
 				 * 0 if to be queued awaiting resources */
 	uint32_t job_id;	/* job ID, default set by Slurm */
@@ -1612,6 +1613,7 @@ typedef struct job_info {
 				 * one per allocated node */
 	char **gres_detail_str;	/* Details of GRES count/index alloc per node */
 	uint32_t group_id;	/* group job submitted as */
+	char *hints; 		/* to be used to decide which features to use */
 	uint32_t job_id;	/* job ID */
 	job_resources_t *job_resrcs; /* opaque data type, job resources */
 	uint32_t job_state;	/* state of the job, see enum job_states */
