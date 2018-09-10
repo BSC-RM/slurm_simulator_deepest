@@ -543,6 +543,7 @@ struct job_details {
 	char *extra;			/* extra field, unused */
 	List feature_list;		/* required features with node counts */
 	char *features;			/* required features */
+	char *hints;			/* required for the cons_res for the features */
 	uint32_t max_cpus;		/* maximum number of cpus */
 	uint32_t orig_max_cpus;		/* requested value of max_cpus */
 	uint32_t max_nodes;		/* maximum number of nodes */
