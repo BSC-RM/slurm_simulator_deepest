@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package config;
+
+message Model
+{
+	enum ModelID
+	{
+		ENERGY = 0;
+		POWER = 1;
+		TIME = 2; 
+	}
+	
+	ModelID type = 1;
+	int32 parameters = 2;
+	string description = 3;
+	string modelFile = 4;
+}
+
+message Module 
+{
+	enum ModuleID 
+	{
+		CM = 0;
+		DAM = 1;
+		ESB = 2;
+	}
+	
+	ModuleID id = 1;
+	int32 cores = 2;
+	string name = 3;
+	string description = 4;
+	double freqMin = 5;
+	double freqMax = 6;
+	double freqInc = 7;
+	double freqNom = 8;
+	repeated Model models= 9;
+}
+
+message Cluster
+{
+	repeated Module module = 1;
+}

@@ -549,6 +549,7 @@ AC_CONFIG_FILES([Makefile
 		 src/plugins/priority/Makefile
 		 src/plugins/priority/basic/Makefile
 		 src/plugins/priority/multifactor/Makefile
+		 src/plugins/priority/multifactor_energy/Makefile
 		 src/plugins/proctrack/Makefile
 		 src/plugins/proctrack/cray_aries/Makefile
 		 src/plugins/proctrack/cgroup/Makefile
