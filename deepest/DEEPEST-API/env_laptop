@@ -1,0 +1,5 @@
+#!/bin/bash
+
+export PROTOBUF_LIB="-L/usr/local/lib -lprotobuf"
+export PROTOBUF_INC=/usr/local/include
+export PROTOBUF_LIBDIR=/usr/local/lib
