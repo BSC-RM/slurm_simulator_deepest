@@ -911,6 +911,8 @@ struct job_record {
 #define SLURM_DEPEND_BURST_BUFFER	8	/* After job burst buffer
 						 * stage-out completes */
 
+#define SLURM_DEPEND_PLUSSINGLETON      9       /* Only one job for this 
+                                                 * user/name, the rest are cancelled *//* new dependency option added by ANA*/
 #define SLURM_FLAGS_OR			1	/* OR job dependencies */
 
 struct	depend_spec {
