@@ -166,6 +166,9 @@ static uint32_t max_array_size = NO_VAL;
 static bitstr_t *requeue_exit = NULL;
 static bitstr_t *requeue_exit_hold = NULL;
 static bool     validate_cfgd_licenses = true;
+static int	select_serial = -1;
+static uint32_t job_dep_count = 0;
+static char prev_name[7]="";
 
 /* Local functions */
 static void _add_job_hash(struct job_record *job_ptr);
