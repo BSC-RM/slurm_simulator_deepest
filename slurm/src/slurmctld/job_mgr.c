@@ -5016,6 +5016,24 @@ extern int job_allocate(job_desc_msg_t * job_specs, int immediate,
 	if (job_ptr->state_reason == WAIT_HELD_USER)
 		held_user = true;
 
+                /* This part was added to tune priorities of alternative jobs in plussingleton dependecy case TODO
+                  if(job_ptr->details->depend_list){
+                   if(!strcmp(job_ptr->name,prev_name)){
+                     job_dep_count++;
+                     if(job_dep_count == 2) job_ptr->priority = job_ptr->priority - 14;
+                     else if (job_dep_count == 3) {
+                         job_ptr->priority = job_ptr->priority - 15; // 50 and 100 should be made parameters to control how fast do we want alternative modules to be considered.
+                         //job_dep_count=0;
+                     }
+                     strcpy(prev_name,job_ptr->name);
+                     info("JOB_MGR: Setting priority to %u for job %u, order number %u ", job_ptr->priority, job_ptr->job_id, job_dep_count);
+                   }
+                   else{
+                       job_dep_count=1;
+                       strcpy(prev_name,job_ptr->name);
+                   }
+                }
+*/
 	if (independent &&
 	    (license_job_test(job_ptr, time(NULL), true) != SLURM_SUCCESS))
 		independent = false;
