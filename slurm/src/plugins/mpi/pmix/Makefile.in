@@ -1462,6 +1462,8 @@ uninstall-am: uninstall-pkglib_v1LTLIBRARIES \
 
 .PRECIOUS: Makefile
 
+.PRECIOUS: Makefile
+
 
 force:
 $(pmix_internal_libs): force
