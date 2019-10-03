@@ -511,7 +511,6 @@ time_mgr(void *arg) {
 		/* Synchronization with daemons */
 		//info("before unlocking next loop");
 		sem_wait(mutexserver);
-		info("unlocking next loop");
 		*global_sync_flag = 1;
 		sem_post(mutexserver);
 		while(1) {
@@ -538,10 +537,10 @@ time_mgr(void *arg) {
 				1000000.0;
 		//printf("sim_mgr loop iteration time %lu, SU: %f, sim_inc: %d, sim_time: %d\n",
 		//		i_loop.tv_usec, speed_up, time_incr, *(current_sim));
-//#ifdef DEBUG
+#ifdef DEBUG
 		info("[%d] time_mgr--current simulated time: %lu\n",
 					__LINE__, *current_sim);
-//#endif
+#endif
 	}
 
 	return 0;
@@ -1151,7 +1150,12 @@ main(int argc, char *argv[], char *envp[]) {
         }
 
 	//read apps info - TODO: move this path to slurm.conf and sim.conf
-	FILE *apps_fp = fopen("/home/marcodamico/PhD/sims/conf/ear/apps","r");
+	char *apps_file = getenv("LIBEN_APPS");
+	if (!apps_file) {
+		error("Apps file not specified");
+		return -1;
+	}
+	FILE *apps_fp = fopen(apps_file,"r");
 	if (!apps_fp) {
 		error("Unable to open apps file");
 		return -1;

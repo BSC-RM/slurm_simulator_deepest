@@ -181,6 +181,10 @@ struct jobcomp_info {
 	char *std_out;
 	char *std_err;
 	uint16_t backfilled;
+	char *selected_part;
+	double best_freq;
+	double best_energy;
+	double def_energy;
 };
 
 static struct jobcomp_info * _jobcomp_info_create (struct job_record *job)
@@ -272,6 +276,22 @@ static struct jobcomp_info * _jobcomp_info_create (struct job_record *job)
 			j->std_err = xstrdup(job->details->std_err);
 	}
 	j->backfilled = job->backfilled;
+	j->selected_part = xstrdup(job->part_ptr->name);
+	int i = 0;
+	if (job->part_ptr_list) {
+		struct part_record *part_ptr_tmp;
+		ListIterator iter = list_iterator_create(job->part_ptr_list);
+		while ((part_ptr_tmp = list_next(iter))) {
+			if (xstrcmp(part_ptr_tmp->name, job->part_ptr->name) == 0)
+				break;
+			i++;
+		}
+		list_iterator_destroy(iter);
+	}
+	j->best_freq = job->best_freq[i];
+	j->best_energy = job->best_energy[i];
+	j->def_energy = job->def_energy[i];
+
 	return (j);
 }
 
@@ -296,6 +316,7 @@ static void _jobcomp_info_destroy(void *arg)
 	xfree (j->std_err);
 	xfree (j->user_name);
 	xfree (j->work_dir);
+	xfree(j->selected_part);
 	xfree (j);
 }
 
@@ -427,7 +448,8 @@ static char ** _create_environment (struct jobcomp_info *job)
 	_env_append (&env, "ACCOUNT",   job->account);
 	_env_append (&env, "JOBNAME",   job->name);
 	_env_append (&env, "JOBSTATE",  job->jobstate);
-	_env_append (&env, "PARTITION", job->partition);
+	_env_append (&env, "REQ_PARTITION", job->partition);
+	_env_append (&env, "PARTITION", job->selected_part);
 	_env_append (&env, "QOS",	job->qos);
 	_env_append (&env, "DEPENDENCY", job->orig_dependency);
 	_env_append (&env, "WORK_DIR",  job->work_dir);
@@ -453,6 +475,9 @@ static char ** _create_environment (struct jobcomp_info *job)
 #else
 	_env_append (&env, "PATH", "/bin:/usr/bin");
 #endif
+	_env_append_fmt (&env, "FREQ", "%lf", job->best_freq);
+	_env_append_fmt (&env, "ENERGY", "%lf", job->best_energy);
+	_env_append_fmt (&env, "DEF_ENERGY", "%lf", job->def_energy);
 
 	return (env);
 }
