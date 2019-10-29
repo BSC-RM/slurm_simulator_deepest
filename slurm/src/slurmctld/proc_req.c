@@ -242,6 +242,11 @@ static void  _slurm_rpc_persist_init(slurm_msg_t *msg, connection_arg_t *arg);
 
 extern diag_stats_t slurmctld_diag_stats;
 
+int arrived_jobs_epilogs = 0;
+int total_finished_jobs = 0;
+
+int total_epilog_complete_jobs=0; /* ANA: keeps track how many jobs from total jobs in the log have finished. */
+
 #ifndef NDEBUG
 /*
  * Used alongside the testsuite to signal that the RPC should be processed
@@ -2374,7 +2379,6 @@ static void  _slurm_rpc_epilog_complete(slurm_msg_t *msg,
 	finished_jobs_waiting_for_epilog--;
 	/* ANA: keep track of the jobs that have finished in its entirety. */
 	total_epilog_complete_jobs++;
-        
 #endif
 }
 
@@ -2664,7 +2668,6 @@ static void _slurm_rpc_complete_batch_script(slurm_msg_t *msg,
 	/* Mark job allocation complete */
 	if (msg->msg_type == REQUEST_COMPLETE_BATCH_JOB)
 		job_epilog_complete(comp_msg->job_id, comp_msg->node_name, 0);
-	finished_jobs_waiting_for_epilog+=1;
 	i = job_complete(comp_msg->job_id, uid, job_requeue, false,
 			 comp_msg->job_rc);
 	error_code = MAX(error_code, i);
@@ -7075,10 +7078,11 @@ static void _slurm_rpc_sim_helper_cycle(slurm_msg_t * msg)
 		usleep(1000);
 	}
 	total_finished_jobs = 0;
-	while (finished_jobs_waiting_for_epilog > 0) {
-		debug3("Waiting epilog to finish");
+	while (arrived_jobs_epilogs < helper_msg->total_jobs_ended) {
+    	debug3("Waiting epilog to finish");
 		usleep(1000);
 	}
+	arrived_jobs_epilogs = 0;
 
      debug3("Processing RPC: MESSAGE_SIM_HELPER_CYCLE for %d jobs",
     		helper_msg->total_jobs_ended);
