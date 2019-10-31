@@ -713,18 +713,20 @@ void intermodule_time_res_convertor(job_desc_msg_t* dmesg, job_desc_msg_t* dmesg
                        }*/
                      }
 
-          //info("End filling in desc msgs 1 and 2 priority, timelimit, etc.");
-          /*dmesg1->num_tasks     = dmesg1->min_nodes;
-          dmesg2->num_tasks     = dmesg2->min_nodes;
-          dmesg1->min_cpus      = dmesg1->min_nodes * jobd->cpus_per_task;
-          dmesg2->min_cpus      = dmesg2->min_nodes * jobd->cpus_per_task;*/
-          dmesg1->cpus_per_task = dmesg1->min_cpus/dmesg1->num_tasks;
-          //dmesg2->cpus_per_task = dmesg2->min_cpus/dmesg2->num_tasks;
+          
 
-          // Set temporarily
-          /*dmesg->ntasks_per_node=1;
-          dmesg1->ntasks_per_node=1;
-          dmesg2->ntasks_per_node=1;*/
+     //info("End filling in desc msgs 1 and 2 priority, timelimit, etc.");
+     /*dmesg1->num_tasks     = dmesg1->min_nodes;
+     dmesg2->num_tasks     = dmesg2->min_nodes;
+     dmesg1->min_cpus      = dmesg1->min_nodes * jobd->cpus_per_task;
+     dmesg2->min_cpus      = dmesg2->min_nodes * jobd->cpus_per_task;*/
+     dmesg1->cpus_per_task = dmesg1->min_cpus/dmesg1->num_tasks;
+     //dmesg2->cpus_per_task = dmesg2->min_cpus/dmesg2->num_tasks;
+
+     // Set temporarily
+     /*dmesg->ntasks_per_node=1;
+     dmesg1->ntasks_per_node=1;
+     dmesg2->ntasks_per_node=1;*/
 }
 
 void generate_job_desc_msg(job_desc_msg_t* dmesg, job_trace_t* jobd) {
