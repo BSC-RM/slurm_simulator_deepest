@@ -56,6 +56,8 @@ extern pid_t getpgid(pid_t pid);
 extern int devnull;
 extern bool get_reg_resp;
 
+extern int waiting_epilog_msgs;
+extern pthread_mutex_t epilogs_mutex;
 /*
  * Message aggregation types
  */
