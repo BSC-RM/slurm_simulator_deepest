@@ -236,6 +236,7 @@ extern bool   test_config;
 extern int    test_config_rc;
 #ifdef SLURM_SIMULATOR
 extern int backfill_interval;
+extern uint32_t multifactor_interval;
 #endif
 /* Buffer size use to print the jobid2str()
  * jobid, taskid and state.
