@@ -53,6 +53,11 @@ namespace DEEPEST
 		return low-_vData.begin();
 	}
 
+	int matrix::size ()
+	{
+		return _vData.end() - _vData.begin();
+	}
+
 	std::vector<int> matrix::min (int direction)
 	{
 		std::vector<int> indices;

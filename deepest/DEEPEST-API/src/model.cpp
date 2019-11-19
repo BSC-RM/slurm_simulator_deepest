@@ -42,12 +42,58 @@ namespace DEEPEST
 
 	ModelsID model::type(){return _iType;}
 
+	void model::ear_predictor(double dFreqRef, double dFreqMin, double dFreqInc, std::vector<double> vValues)
+	{
+		double predicted;
+		_vProjection.clear();
+		int iIndexRef = (int)(round((dFreqRef - dFreqMin) / dFreqInc));
+		matrix referenceMatrix=_cCoefficients(iIndexRef);
+
+		if (_iType == ModelsID::_EAR_POWER_) {
+			for(int i = 0; i < _iFrequencies; i++) {
+				predicted = referenceMatrix(i, 0) * vValues[1] +
+					    referenceMatrix(i, 1) * vValues[3] +
+					    referenceMatrix(i, 2);
+				_vProjection.push_back(predicted);
+			}
+		}
+		else if (_iType == ModelsID::_EAR_TIME_) {
+			for(int i =0; i < _iFrequencies; i++) {
+				double dFreqV = dFreqMin + dFreqInc * i;
+				double cpi = referenceMatrix(i, 0) * vValues[2] +
+					     referenceMatrix(i, 1) * vValues[3] +
+					     referenceMatrix(i, 2);
+				predicted = cpi * vValues[0] / vValues[2] * dFreqRef / dFreqV;
+				_vProjection.push_back(predicted);
+			}
+		}
+		else if (_iType == ModelsID::_EAR_ENERGY_) {
+			for(int i =0; i < _iFrequencies; i++) {
+				double dFreqV = dFreqMin + dFreqInc * i;
+				double cpi = referenceMatrix(i,3) * vValues[2] +
+					     referenceMatrix(i, 4) * vValues[3] +
+					     referenceMatrix(i, 5);
+				predicted = referenceMatrix(i, 0) * vValues[1] +
+					    referenceMatrix(i, 1) * vValues[3] +
+					    referenceMatrix(i, 2);
+				predicted *= cpi * vValues[0] / vValues[2] * dFreqRef / dFreqV;
+				_vProjection.push_back(predicted);
+			}
+		}
+	}
+
 	void model::predictor(double dFreqRef, double dFreqMin, double dFreqInc, std::vector<double> vValues)
 	{
 		double predicted;
+		_vProjection.clear();
 		int iIndexRef = (int)(round((dFreqRef - dFreqMin) / dFreqInc));
 
 		std::cout << __FUNCTION__ << " Values size: " << vValues.size() << " Parameters " << _iParameters << std::endl;
+		if (_iType == ModelsID::_EAR_ENERGY_ || _iType == ModelsID::_EAR_POWER_ || _iType == ModelsID::_EAR_TIME_) {
+			model::ear_predictor(dFreqRef, dFreqMin, dFreqInc, vValues);
+			return;
+		}
+
 		if ((unsigned)vValues.size() != (unsigned)_iParameters)	throw internalException();
 
 		matrix experiment(_iParameters, 1, vValues);
@@ -71,6 +117,9 @@ namespace DEEPEST
 			case ModelsID::_ENERGY_ : sModel = "ENERGY";  break;
 			case ModelsID::_POWER_  : sModel = "POWER";   break;
 			case ModelsID::_TIME_   : sModel = "TIME";    break;
+			case ModelsID::_EAR_ENERGY_ : sModel = "EAR_ENERGY";  break;
+			case ModelsID::_EAR_POWER_ : sModel = "EAR_POWER";  break;
+			case ModelsID::_EAR_TIME_ : sModel = "EAR_TIME";  break;
 			default:                  sModel = "Unknown"; break;
 		}
 

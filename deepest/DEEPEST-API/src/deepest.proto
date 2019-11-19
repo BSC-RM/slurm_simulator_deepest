@@ -8,7 +8,10 @@ message Model
 	{
 		ENERGY = 0;
 		POWER = 1;
-		TIME = 2; 
+		TIME = 2;
+		EAR_ENERGY = 3;
+		EAR_POWER = 4;
+		EAR_TIME = 5;
 	}
 	
 	ModelID type = 1;

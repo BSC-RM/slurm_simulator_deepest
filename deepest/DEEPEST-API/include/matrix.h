@@ -30,6 +30,7 @@ namespace DEEPEST
 			matrix (int, int, std::vector<double>);
 			matrix(const matrix&) = default;
 			virtual ~matrix() = default;
+			int size();
 
 			matrix& operator=(const matrix&) = default;
 			matrix& operator=(const std::vector<double>&);
