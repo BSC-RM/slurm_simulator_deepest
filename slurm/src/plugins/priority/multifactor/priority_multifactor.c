@@ -69,7 +69,9 @@
 
 #include "src/slurmctld/licenses.h"
 #include "src/slurmctld/read_config.h"
-
+#ifdef SLURM_SIMULATOR
+#include <semaphore.h>
+#endif
 #include "fair_tree.h"
 
 #define SECS_PER_DAY	(24 * 60 * 60)
@@ -156,6 +158,39 @@ bool priority_debug = 0;
 
 static void _priority_p_set_assoc_usage_debug(slurmdb_assoc_rec_t *assoc);
 static void _set_assoc_usage_efctv(slurmdb_assoc_rec_t *assoc);
+
+#ifdef SLURM_SIMULATOR
+
+char MF_SEM_NAME[] = "mf_sem";
+char MF_DONE_SEM_NAME[] = "mf_done_sem";
+sem_t* mutex_mf_pg=NULL;
+sem_t* mutex_mf_done_pg=NULL;
+
+int open_MF_sync_semaphore_pg()
+{
+	mutex_mf_pg = sem_open(MF_SEM_NAME, O_CREAT, 0644, 0);
+	if(mutex_mf_pg == SEM_FAILED) {
+		error("unable to create multifactor semaphore");
+		sem_unlink(MF_SEM_NAME);
+		return -1;
+	}
+
+	mutex_mf_done_pg = sem_open(MF_DONE_SEM_NAME, O_CREAT, 0644, 0);
+	if(mutex_mf_done_pg == SEM_FAILED) {
+		error("unable to create multifactor done semaphore");
+		sem_unlink(MF_DONE_SEM_NAME);
+		return -1;
+	}
+	return 0;
+}
+
+void close_MF_sync_semaphore()
+{
+	if(mutex_mf_pg != SEM_FAILED) sem_close(mutex_mf_pg);
+	if(mutex_mf_done_pg != SEM_FAILED) sem_close(mutex_mf_done_pg);
+	debug("multifactor: Closing MF sync sempahore");
+}
+#endif
 
 /*
  * apply decay factor to all associations usage_raw
@@ -1743,6 +1778,9 @@ int init ( void )
 	slurmctld_lock_t job_write_lock =
 		{ NO_LOCK, WRITE_LOCK, READ_LOCK, READ_LOCK, NO_LOCK };
 
+#ifdef SLURM_SIMULATOR
+	multifactor_interval = slurm_get_priority_calc_period();
+#endif
 	/* This means we aren't running from the controller so skip setup. */
 	if (cluster_cpus == NO_VAL) {
 		damp_factor = (long double)slurm_get_fs_dampening_factor();
@@ -1774,6 +1812,9 @@ int init ( void )
 			(ListForF) _decay_apply_new_usage_and_weighted_factors,
 			&start_time);
 		unlock_slurmctld(job_write_lock);
+#ifdef SLURM_SIMULATOR
+		multifactor_interval = 0;
+#endif
 	} else if (assoc_mgr_root_assoc) {
 		if (!cluster_cpus)
 			fatal("We need to have a cluster cpu count "
@@ -1796,6 +1837,10 @@ int init ( void )
 
 		slurm_cond_wait(&decay_init_cond, &decay_init_mutex);
 		slurm_mutex_unlock(&decay_init_mutex);
+#ifdef SLURM_SIMULATOR
+		/* Eat first post of the decay thread */
+		sem_wait(mutex_mf_done_pg);
+#endif
 	} else {
 		if (weight_fs) {
 			fatal("It appears you don't have any association "
@@ -1803,6 +1848,9 @@ int init ( void )
 			      "The priority/multifactor plugin requires "
 			      "this information to run correctly.  Please "
 			      "check your database connection and try again.");
+#ifdef SLURM_SIMULATOR
+			multifactor_interval = 0;
+#endif
 		}
 		calc_fairshare = 0;
 	}
