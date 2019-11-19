@@ -22,7 +22,7 @@
 
 namespace DEEPEST
 {
-	enum class ModelsID {_NONE_=-1, _ENERGY_, _POWER_, _TIME_};
+	enum class ModelsID {_NONE_=-1, _ENERGY_, _POWER_, _TIME_, _EAR_ENERGY_, _EAR_POWER_, _EAR_TIME_};
 
 	class model
 	{
@@ -41,6 +41,7 @@ namespace DEEPEST
 			virtual ~model();
 
 			void predictor(double, double, double, std::vector<double>);
+			void ear_predictor(double, double, double, std::vector<double>);
 			std::vector<double>& getProjection();
 
 			ModelsID type();
@@ -55,7 +56,7 @@ namespace DEEPEST
 			energyModel(const energyModel&) = default;
 			virtual ~energyModel() = default;
 			void predictor(double, double, double, std::vector<double>);
-
+			void ear_predictor(double, double, double, std::vector<double>);
 	};
 
 	class powerModel : public model
@@ -66,7 +67,8 @@ namespace DEEPEST
 			powerModel(const powerModel&) = default;
 			virtual ~powerModel() = default;
 			void predictor(double, double, double, std::vector<double>);
-	};
+			void ear_predictor(double, double, double, std::vector<double>);
+    };
 
 	class timeModel : public model
 	{
@@ -75,6 +77,7 @@ namespace DEEPEST
 			timeModel(std::string, int, int, int, std::string);
 			timeModel(const timeModel&) = default;
 			virtual ~timeModel() = default;
+			void ear_predictor(double, double, double, std::vector<double>);
 			void predictor(double, double, double, std::vector<double>);
 	};
 } //namespace

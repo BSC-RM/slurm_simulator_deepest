@@ -8,6 +8,11 @@
 #include "deepest.h"
 #include "interface.h"
 
+#include <iostream>
+#include <cstring>
+#include <string>
+#include <fstream>
+
 static pDeepest pdeepest=NULL;
 static pProjection pprojection=NULL;
 
@@ -54,13 +59,10 @@ int removeMachine(int index)
 	return static_cast<projection *>(pprojection)->removeMachine(index);
 }
 
-char *getMachineName(int index)
+const char *getMachineName(int index)
 {
-	std::string name;
-
 	if (index < 0) throw std::out_of_range(__FUNCTION__);
-	name = static_cast<projection *>(pprojection)->getMachineName(index);
-	return (char *)name.c_str();
+	return static_cast<projection *>(pprojection)->getMachineName(index).c_str();
 }
 
 int getMachineFrequencies(int index)
@@ -131,6 +133,7 @@ double* energyProjection(int index)
 	venergy=static_cast<projection *>(pprojection)->getEnergyProjection(index);
 	energy = (double *) malloc (venergy.size() * sizeof(double));
 	if (!energy) throw std::bad_alloc();
+
 
 	for (it=venergy.begin(); it!=venergy.end(); ++it, i++)
 		energy[i] = *it;

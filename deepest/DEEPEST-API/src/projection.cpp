@@ -21,14 +21,12 @@
 #include <fstream>
 #include <sstream>
 #include <vector>
-#include <algorithm>
 
 #include <fcntl.h>
 #include <unistd.h>
 
 using namespace google::protobuf;
 using namespace google::protobuf::io;
-using namespace std;
 
 namespace DEEPEST
 {
@@ -42,8 +40,6 @@ namespace DEEPEST
 	int projection::addMachine(std::string sFile)
 	{
 		config::Cluster cluster;
-		std::vector<model> vmodels;
-		model pModel;
 
 		int fd = open(sFile.c_str(), O_RDONLY);
 		if (!fd) throw fileNotFoundException();
@@ -55,6 +51,7 @@ namespace DEEPEST
 
 		for (int i=0; i<cluster.module_size(); i++)
 		{
+			std::vector<model> vmodels;
 			const config::Module& module = cluster.module(i);
 			int iID = module.id();
 			std::string sName = module.name();
@@ -74,6 +71,7 @@ namespace DEEPEST
 
 			for (int j=0; j<module.models_size(); j++)
 			{
+				model pModel;
 				const config::Model& models = module.models(j);
 
 				int iParameters = models.parameters();      // =2
@@ -87,6 +85,12 @@ namespace DEEPEST
 					pModel = powerModel(sFileName, iParameters, freqs.size(), (int)ModelsID::_POWER_, sParametersDescription);
 				else if (models.type() == models.TIME)
 					pModel = timeModel(sFileName, iParameters, freqs.size(), (int)ModelsID::_TIME_, sParametersDescription);
+				else if (models.type() == models.EAR_ENERGY)
+					pModel = energyModel(sFileName, iParameters, freqs.size(), (int)ModelsID::_EAR_ENERGY_, sParametersDescription);
+				else if (models.type() == models.EAR_POWER)
+					pModel = powerModel(sFileName, iParameters, freqs.size(), (int)ModelsID::_EAR_POWER_, sParametersDescription);
+				else if (models.type() == models.EAR_TIME)
+					pModel = timeModel(sFileName, iParameters, freqs.size(), (int)ModelsID::_EAR_TIME_, sParametersDescription);
 
 				vmodels.push_back(pModel);
 			}
@@ -173,7 +177,7 @@ namespace DEEPEST
 			throw std::out_of_range(__FUNCTION__);
 
 		machine *m = _vMachine.at(iIndex);
-		std::vector<model>::iterator v = find_if(m->models().begin(), m->models().end(), [](model mo) {return mo.type() == ModelsID::_ENERGY_;});
+		std::vector<model>::iterator v = find_if(m->models().begin(), m->models().end(), [](model mo) {return mo.type() == ModelsID::_ENERGY_ || mo.type() == ModelsID::_EAR_ENERGY_;});
 		return v->getProjection();
 	}
 
@@ -183,7 +187,7 @@ namespace DEEPEST
 			throw std::out_of_range(__FUNCTION__);
 
 		machine *m = _vMachine.at(iIndex);
-		std::vector<model>::iterator v = find_if(m->models().begin(), m->models().end(), [](model mo) {return mo.type() == ModelsID::_POWER_;});
+		std::vector<model>::iterator v = find_if(m->models().begin(), m->models().end(), [](model mo) {return mo.type() == ModelsID::_POWER_ || mo.type() == ModelsID::_EAR_POWER_;});
 		return v->getProjection();
 	}
 
@@ -193,7 +197,7 @@ namespace DEEPEST
 			throw std::out_of_range(__FUNCTION__);
 
 		machine *m = _vMachine.at(iIndex);
-		std::vector<model>::iterator v = find_if(m->models().begin(), m->models().end(), [](model mo) {return mo.type() == ModelsID::_TIME_;});
+		std::vector<model>::iterator v = find_if(m->models().begin(), m->models().end(), [](model mo) {return mo.type() == ModelsID::_TIME_ || mo.type() == ModelsID::_EAR_TIME_;});
 		return v->getProjection();
 	}
 

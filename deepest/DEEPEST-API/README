@@ -1,0 +1,7 @@
+1 - Download and install protobuf C compiler (I installed v 3.6.0) - https://github.com/protocolbuffers/protobuf/releases
+2 - Run: source env_laptop
+3 - Run:
+	protoc --proto_path=src --cpp_out=src src/deepest.proto
+	#protoc --proto_path=src --cpp_out=include src/deepest.proto
+4 - Compile the library with make
+

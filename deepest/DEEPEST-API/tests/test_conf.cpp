@@ -18,7 +18,8 @@ int main (int argc, char *argv[])
 
 	try
 	{
-		iMachines = p.addMachine("../conf/machine1.conf");
+//		iMachines = p.addMachine("../conf/machine1.conf");
+		iMachines = p.addMachine("/home/marcodamico/PhD/sims/conf/ear2.conf");
 		p.runModels(trace);
 		p.print();
 

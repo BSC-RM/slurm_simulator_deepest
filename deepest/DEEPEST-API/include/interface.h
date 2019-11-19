@@ -23,7 +23,7 @@ extern "C" {
 	void deleteProjection();
 	int addMachine(char*);
 	int removeMachine(int);
-	char* getMachineName(int);
+	const char* getMachineName(int);
 	int getMachineFrequencies(int);
 	double *getMachineFrequenciesRange(int);
 	int runModels(int, double*);
