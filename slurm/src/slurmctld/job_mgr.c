@@ -5008,7 +5008,7 @@ extern int job_allocate(job_desc_msg_t * job_specs, int immediate,
 	if (job_ptr->state_reason == WAIT_HELD_USER)
 		held_user = true;
 
-                if(job_ptr->details->depend_list){
+                if(job_ptr->details->depend_list){ // TODO It should be checked if there is plussingleton in the list, not to conflict with other dependency types
                    if(!strcmp(job_ptr->name,prev_name)){
                      job_dep_count++;
                      if(job_dep_count == 2) job_ptr->priority = job_ptr->priority - 5; // -X
