@@ -4,11 +4,11 @@
  *  Copyright (C) 2009 CEA/DAM/DIF
  *  Written by Matthieu Hautreux <matthieu.hautreux@cea.fr>
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -24,13 +24,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -44,9 +44,10 @@
 
 #define XCGROUP_ERROR    1
 #define XCGROUP_SUCCESS  0
+#define MAX_MOVE_WAIT 5000
 
 // http://lists.debian.org/debian-boot/2012/04/msg00047.html
-#if defined(__FreeBSD__) || defined(__NetBSD__)
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__)
 #define	MS_NOSUID	MNT_NOSUID
 #define	MS_NOEXEC	MNT_NOEXEC
 #define	MS_NODEV	0
@@ -77,8 +78,7 @@ typedef struct xcgroup {
  *  - XCGROUP_ERROR
  *  - XCGROUP_SUCCESS
  */
-int xcgroup_ns_create(slurm_cgroup_conf_t *conf,
-		      xcgroup_ns_t* cgns, char* mnt_args,
+int xcgroup_ns_create(xcgroup_ns_t* cgns, char* mnt_args,
 		      char* subsys);
 
 /*
@@ -133,7 +133,7 @@ int xcgroup_ns_find_by_pid(xcgroup_ns_t* cgns, xcgroup_t* cg, pid_t pid);
  *  - XCGROUP_ERROR
  *  - XCGROUP_SUCCESS
  */
-int xcgroup_ns_load(slurm_cgroup_conf_t *conf, xcgroup_ns_t *cgns, char *subsys);
+int xcgroup_ns_load(xcgroup_ns_t *cgns, char *subsys);
 
 /*
  * create a cgroup structure
@@ -151,7 +151,7 @@ int xcgroup_create(xcgroup_ns_t* cgns, xcgroup_t* cg,
 void xcgroup_destroy(xcgroup_t* cg);
 
 /*
- * lock a cgroup (must have been instanciated)
+ * lock a cgroup (must have been instantiated)
  * (system level using flock)
  *
  * returned values:
@@ -170,7 +170,7 @@ int xcgroup_lock(xcgroup_t* cg);
 int xcgroup_unlock(xcgroup_t* cg);
 
 /*
- * instanciate a cgroup in a cgroup namespace (mkdir)
+ * instantiate a cgroup in a cgroup namespace (mkdir)
  *
  * returned values:
  *  - XCGROUP_ERROR
@@ -316,5 +316,12 @@ int xcgroup_get_uint64_param(xcgroup_t* cg, char* param, uint64_t* value);
  *   - XCGROUP_SUCCESS
  */
 int xcgroup_move_process(xcgroup_t *cg, pid_t pid);
+
+/*
+ * Wait for a pid to move out of a cgroup.
+ *
+ * Must call xcgroup_move_process before this function.
+ */
+int xcgroup_wait_pid_moved(xcgroup_t *cg, const char *cg_name);
 
 #endif

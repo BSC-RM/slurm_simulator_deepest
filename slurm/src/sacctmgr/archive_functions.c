@@ -8,11 +8,11 @@
  *  Written by Danny Auble <da@llnl.gov>
  *  CODE-OCEC-09-009. All rights reserved.
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -28,13 +28,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -445,6 +445,7 @@ static int _set_cond(int *start, int argc, char **argv,
 
 extern int sacctmgr_archive_dump(int argc, char **argv)
 {
+	char *warning = NULL;
 	int rc = SLURM_SUCCESS;
 	slurmdb_archive_cond_t *arch_cond =
 		xmalloc(sizeof(slurmdb_archive_cond_t));
@@ -540,20 +541,19 @@ extern int sacctmgr_archive_dump(int argc, char **argv)
 		}
 	}
 
-	rc = slurmdb_archive(db_conn, arch_cond);
-	if (rc == SLURM_SUCCESS) {
-		if (commit_check("Would you like to commit changes?")) {
-			slurmdb_connection_commit(db_conn, 1);
-		} else {
-			printf(" Changes Discarded\n");
-			slurmdb_connection_commit(db_conn, 0);
+	warning = "This may result in loss of accounting database records (if Purge* options enabled).\nAre you sure you want to continue?";
+	if (commit_check(warning)) {
+		rc = slurmdb_archive(db_conn, arch_cond);
+		if (rc != SLURM_SUCCESS) {
+			exit_code = 1;
+			fprintf(stderr, " Problem dumping archive: %s\n",
+				slurm_strerror(rc));
+			rc = SLURM_ERROR;
 		}
 	} else {
-		exit_code = 1;
-		fprintf(stderr, " Problem dumping archive: %s\n",
-			slurm_strerror(rc));
-		rc = SLURM_ERROR;
+		printf(" Changes Discarded\n");
 	}
+
 	slurmdb_destroy_archive_cond(arch_cond);
 
 	return rc;

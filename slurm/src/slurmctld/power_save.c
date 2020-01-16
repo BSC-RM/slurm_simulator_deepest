@@ -12,11 +12,11 @@
  *  Written by Morris Jette <jette1@llnl.gov>
  *  CODE-OCEC-09-009. All rights reserved.
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -32,13 +32,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -61,13 +61,15 @@
 #include "src/common/macros.h"
 #include "src/common/node_features.h"
 #include "src/common/read_config.h"
+#include "src/common/slurm_accounting_storage.h"
 #include "src/common/xstring.h"
 #include "src/slurmctld/job_scheduler.h"
 #include "src/slurmctld/locks.h"
+#include "src/slurmctld/node_scheduler.h"
 #include "src/slurmctld/power_save.h"
 #include "src/slurmctld/slurmctld.h"
+#include "src/slurmctld/trigger_mgr.h"
 
-#define _DEBUG			0
 #define MAX_SHUTDOWN_DELAY	10	/* seconds to wait for child procs
 					 * to exit after daemon shutdown
 					 * request, then orphan or kill proc */
@@ -84,13 +86,15 @@ pthread_mutex_t power_mutex = PTHREAD_MUTEX_INITIALIZER;
 bool power_save_config = false;
 bool power_save_enabled = false;
 bool power_save_started = false;
+bool power_save_debug = false;
 
 int idle_time, suspend_rate, resume_timeout, resume_rate, suspend_timeout;
-char *suspend_prog = NULL, *resume_prog = NULL;
+char *suspend_prog = NULL, *resume_prog = NULL, *resume_fail_prog = NULL;
 char *exc_nodes = NULL, *exc_parts = NULL;
-time_t last_config = (time_t) 0, last_suspend = (time_t) 0;
+time_t last_config = (time_t) 0;
 time_t last_log = (time_t) 0, last_work_scan = (time_t) 0;
 uint16_t slurmd_timeout;
+static bool idle_on_node_suspend = false;
 
 typedef struct exc_node_partital {
 	int exc_node_cnt;
@@ -100,11 +104,12 @@ List partial_node_list;
 
 bitstr_t *exc_node_bitmap = NULL;
 
-bitstr_t *suspend_node_bitmap = NULL, *resume_node_bitmap = NULL;
+bitstr_t *resume_node_bitmap = NULL;
 int   suspend_cnt,   resume_cnt;
 float suspend_cnt_f, resume_cnt_f;
 
 static void  _clear_power_config(void);
+static void  _do_failed_nodes(char *hosts);
 static void  _do_power_work(time_t now);
 static void  _do_resume(char *host);
 static void  _do_suspend(char *host);
@@ -242,11 +247,12 @@ static int _pick_exc_nodes(void *x, void *arg)
 		bit_or(*orig_exc_nodes, exc_node_cnt_bitmap);
 		FREE_NULL_BITMAP(exc_node_cnt_bitmap);
 	}
-#if _DEBUG
-	char *tmp = bitmap2node_name(*orig_exc_nodes);
-	info("power_save module, excluded nodes %s", tmp);
-	xfree(tmp);
-#endif
+
+	if (power_save_debug) {
+		char *tmp = bitmap2node_name(*orig_exc_nodes);
+		info("power_save module, excluded nodes %s", tmp);
+		xfree(tmp);
+	}
 
 	return 0;
 }
@@ -257,10 +263,9 @@ static void _do_power_work(time_t now)
 	int i, wake_cnt = 0, susp_total = 0;
 	time_t delta_t;
 	uint32_t susp_state;
-	bitstr_t *avoid_node_bitmap = NULL;
+	bitstr_t *avoid_node_bitmap = NULL, *failed_node_bitmap = NULL;
 	bitstr_t *wake_node_bitmap = NULL, *sleep_node_bitmap = NULL;
 	struct node_record *node_ptr;
-	bool run_suspend = false;
 
 	if (last_work_scan == 0) {
 		if (exc_nodes && (_parse_exc_nodes() != SLURM_SUCCESS))
@@ -289,12 +294,12 @@ static void _do_power_work(time_t now)
 			xfree(part_list);
 		}
 
-		if (exc_node_bitmap) {
+		if (exc_node_bitmap && power_save_debug) {
 			char *tmp = bitmap2node_name(exc_node_bitmap);
 			info("power_save module, excluded nodes %s", tmp);
 			xfree(tmp);
 		}
-		if (partial_node_list) {
+		if (partial_node_list && power_save_debug) {
 			(void) list_for_each(partial_node_list,
 					     _list_part_node_lists, NULL);
 
@@ -313,18 +318,6 @@ static void _do_power_work(time_t now)
 	}
 	suspend_cnt = (suspend_cnt_f + 0.5);
 	resume_cnt  = (resume_cnt_f  + 0.5);
-
-	if (now > (last_suspend + suspend_timeout)) {
-		/* ready to start another round of node suspends */
-		run_suspend = true;
-		if (last_suspend) {
-			bit_nclear(suspend_node_bitmap, 0,
-				   (node_record_count - 1));
-			bit_nclear(resume_node_bitmap, 0,
-				   (node_record_count - 1));
-			last_suspend = (time_t) 0;
-		}
-	}
 
 	last_work_scan = now;
 
@@ -351,7 +344,7 @@ static void _do_power_work(time_t now)
 		/* Resume nodes as appropriate */
 		if (susp_state &&
 		    ((resume_rate == 0) || (resume_cnt < resume_rate))	&&
-		    (bit_test(suspend_node_bitmap, i) == 0)		&&
+		    !IS_NODE_POWERING_DOWN(node_ptr) &&
 		    (IS_NODE_ALLOCATED(node_ptr) ||
 		     (node_ptr->last_idle > (now - idle_time)))) {
 			if (wake_node_bitmap == NULL) {
@@ -365,7 +358,6 @@ static void _do_power_work(time_t now)
 			node_ptr->node_state |=   NODE_STATE_POWER_UP;
 			node_ptr->node_state |=   NODE_STATE_NO_RESPOND;
 			bit_clear(power_node_bitmap, i);
-			bit_clear(avail_node_bitmap, i);
 			node_ptr->boot_req_time = now;
 			node_ptr->last_response = now + resume_timeout;
 			bit_set(booting_node_bitmap, i);
@@ -374,8 +366,7 @@ static void _do_power_work(time_t now)
 		}
 
 		/* Suspend nodes as appropriate */
-		if (run_suspend 					&&
-		    (susp_state == 0)					&&
+		if ((susp_state == 0)					&&
 		    ((suspend_rate == 0) || (suspend_cnt < suspend_rate)) &&
 		    (IS_NODE_IDLE(node_ptr) || IS_NODE_DOWN(node_ptr))	&&
 		    (node_ptr->sus_job_cnt == 0)			&&
@@ -392,36 +383,80 @@ static void _do_power_work(time_t now)
 			suspend_cnt++;
 			suspend_cnt_f++;
 			node_ptr->node_state |= NODE_STATE_POWER_SAVE;
+			node_ptr->node_state |= NODE_STATE_POWERING_DOWN;
 			node_ptr->node_state &= (~NODE_STATE_NO_RESPOND);
+			bit_set(power_node_bitmap,   i);
+			bit_set(sleep_node_bitmap,   i);
+
+			/* Don't allocate until after SuspendTimeout */
+			bit_clear(avail_node_bitmap, i);
+			node_ptr->last_response = now + suspend_timeout;
+
+			if (idle_on_node_suspend) {
+				if (IS_NODE_DOWN(node_ptr)) {
+					trigger_node_up(node_ptr);
+					clusteracct_storage_g_node_up(
+						acct_db_conn, node_ptr, now);
+				} else if (IS_NODE_IDLE(node_ptr) &&
+					   (IS_NODE_DRAIN(node_ptr) ||
+					    IS_NODE_FAIL(node_ptr))) {
+					clusteracct_storage_g_node_up(
+						acct_db_conn, node_ptr, now);
+				}
+
+				node_ptr->node_state =
+					NODE_STATE_IDLE |
+					(node_ptr->node_state & NODE_STATE_FLAGS);
+				node_ptr->node_state &= (~NODE_STATE_DRAIN);
+				node_ptr->node_state &= (~NODE_STATE_FAIL);
+			}
+		}
+
+		if (IS_NODE_POWERING_DOWN(node_ptr) &&
+		    (node_ptr->last_response < now)) {
+
+			node_ptr->node_state &= (~NODE_STATE_POWERING_DOWN);
+
 			if (!IS_NODE_DOWN(node_ptr) &&
 			    !IS_NODE_DRAIN(node_ptr) &&
 			    !IS_NODE_FAIL(node_ptr))
-				bit_set(avail_node_bitmap,   i);
-			bit_set(power_node_bitmap,   i);
-			bit_set(sleep_node_bitmap,   i);
-			bit_set(suspend_node_bitmap, i);
-			last_suspend = now;
+				make_node_avail(i);
+
+			node_ptr->last_idle = 0;
 		}
 
 		/*
 		 * Down nodes as if not resumed by ResumeTimeout
 		 */
 		if (bit_test(booting_node_bitmap, i) &&
-		    bit_test(resume_node_bitmap, i)  &&
 		    (now > node_ptr->last_response)  &&
+		    IS_NODE_POWER_UP(node_ptr) &&
 		    IS_NODE_NO_RESPOND(node_ptr)) {
+			info("node %s not resumed by ResumeTimeout(%d) - marking down and power_save",
+			     node_ptr->name, resume_timeout);
+			/*
+			 * set_node_down_ptr() will remove the node from the
+			 * avail_node_bitmap.
+			 */
 			set_node_down_ptr(node_ptr, "ResumeTimeout reached");
 			node_ptr->node_state &= (~NODE_STATE_POWER_UP);
 			node_ptr->node_state |= NODE_STATE_POWER_SAVE;
 			bit_set(power_node_bitmap, i);
-			bit_set(avail_node_bitmap, i);
 			bit_clear(booting_node_bitmap, i);
 			bit_clear(resume_node_bitmap, i);
 			node_ptr->last_idle = 0;
+
+			if (resume_fail_prog) {
+				if (!failed_node_bitmap) {
+					failed_node_bitmap =
+						bit_alloc(node_record_count);
+				}
+				bit_set(failed_node_bitmap, i);
+			}
 		}
 	}
 	FREE_NULL_BITMAP(avoid_node_bitmap);
-	if (((now - last_log) > 600) && (susp_total > 0)) {
+	if (power_save_debug && ((now - last_log) > 600) && (susp_total > 0)) {
 		info("Power save mode: %d nodes", susp_total);
 		last_log = now;
 	}
@@ -451,29 +486,54 @@ static void _do_power_work(time_t now)
 		/* last_node_update could be changed already by another thread!
 		last_node_update = now; */
 	}
+
+	if (failed_node_bitmap) {
+		char *nodes;
+		nodes = bitmap2node_name(failed_node_bitmap);
+		if (nodes)
+			_do_failed_nodes(nodes);
+		else
+			error("power_save: bitmap2nodename");
+		xfree(nodes);
+		FREE_NULL_BITMAP(failed_node_bitmap);
+	}
 }
 
-/* power_job_reboot - Reboot compute nodes for a job from the head node */
+/*
+ * power_job_reboot - Reboot compute nodes for a job from the head node.
+ * Also change the modes of KNL nodes for node_features/knl_cray plugin.
+ * IN job_ptr - pointer to job that will be initiated
+ * RET SLURM_SUCCESS(0) or error code
+ */
 extern int power_job_reboot(struct job_record *job_ptr)
 {
 	int rc = SLURM_SUCCESS;
 	int i, i_first, i_last;
 	struct node_record *node_ptr;
-	bitstr_t *boot_node_bitmap = NULL;
+	bitstr_t *boot_node_bitmap = NULL, *feature_node_bitmap = NULL;
 	time_t now = time(NULL);
-	char *nodes, *features = NULL;
+	char *nodes, *reboot_features = NULL;
 	pid_t pid;
 
-	boot_node_bitmap = node_features_reboot(job_ptr);
+/*
+ *	NOTE: See reboot_job_reboot() in job_scheduler.c for similar logic
+ *	used by node_features/knl_generic plugin.
+ */
+	if (job_ptr->reboot)
+		boot_node_bitmap = bit_copy(job_ptr->node_bitmap);
+	else
+		boot_node_bitmap = node_features_reboot(job_ptr);
 	if (boot_node_bitmap == NULL) {
-		/* Powered down nodes require reboot */
-		if (bit_overlap(power_node_bitmap, job_ptr->node_bitmap)) {
+		/* At minimum, the powered down nodes require reboot */
+		if (bit_overlap(power_node_bitmap, job_ptr->node_bitmap) ||
+		    bit_overlap(booting_node_bitmap, job_ptr->node_bitmap)) {
 			job_ptr->job_state |= JOB_CONFIGURING;
 			job_ptr->bit_flags |= NODE_REBOOT;
 		}
 		return SLURM_SUCCESS;
 	}
 
+	/* Modify state information for all nodes, KNL and others */
 	i_first = bit_ffs(boot_node_bitmap);
 	if (i_first >= 0)
 		i_last = bit_fls(boot_node_bitmap);
@@ -496,32 +556,68 @@ extern int power_job_reboot(struct job_record *job_ptr)
 		bit_set(resume_node_bitmap,  i);
 	}
 
-	nodes = bitmap2node_name(boot_node_bitmap);
-	if (nodes) {
-		/* Reboot nodes to change KNL NUMA and/or MCDRAM mode */
-		job_ptr->job_state |= JOB_CONFIGURING;
-		job_ptr->wait_all_nodes = 1;
-		job_ptr->bit_flags |= NODE_REBOOT;
-		if (job_ptr->details && job_ptr->details->features &&
-		    node_features_g_user_update(job_ptr->user_id)) {
-			features = node_features_g_job_xlate(
+	if (job_ptr->details && job_ptr->details->features &&
+	    node_features_g_user_update(job_ptr->user_id)) {
+		reboot_features = node_features_g_job_xlate(
 					job_ptr->details->features);
+		if (reboot_features)
+			feature_node_bitmap = node_features_g_get_node_bitmap();
+		if (feature_node_bitmap)
+			bit_and(feature_node_bitmap, boot_node_bitmap);
+		if (!feature_node_bitmap ||
+		    (bit_ffs(feature_node_bitmap) == -1)) {
+			/* No KNL nodes to reboot */
+			FREE_NULL_BITMAP(feature_node_bitmap);
+		} else {
+			bit_and_not(boot_node_bitmap, feature_node_bitmap);
+			if (bit_ffs(boot_node_bitmap) == -1) {
+				/* No non-KNL nodes to reboot */
+				FREE_NULL_BITMAP(boot_node_bitmap);
+			}
 		}
-		pid = _run_prog(resume_prog, nodes, features, job_ptr->job_id);
-#if _DEBUG
-		info("power_save: pid %d reboot nodes %s features %s",
-		     (int) pid, nodes, features);
-#else
-		verbose("power_save: pid %d reboot nodes %s features %s",
-			(int) pid, nodes, features);
-#endif
-		xfree(features);
-	} else {
-		error("power_save: bitmap2nodename");
-		rc = SLURM_ERROR;
 	}
-	xfree(nodes);
+
+	if (feature_node_bitmap) {
+		/* Reboot nodes to change KNL NUMA and/or MCDRAM mode */
+		nodes = bitmap2node_name(feature_node_bitmap);
+		if (nodes) {
+			job_ptr->job_state |= JOB_CONFIGURING;
+			job_ptr->wait_all_nodes = 1;
+			job_ptr->bit_flags |= NODE_REBOOT;
+			pid = _run_prog(resume_prog, nodes, reboot_features,
+					job_ptr->job_id);
+			if (power_save_debug)
+				info("%s: pid %d reboot nodes %s features %s",
+				     __func__, (int) pid, nodes,
+				     reboot_features);
+		} else {
+			error("%s: bitmap2nodename", __func__);
+			rc = SLURM_ERROR;
+		}
+		xfree(nodes);
+		FREE_NULL_BITMAP(feature_node_bitmap);
+	}
+	if (boot_node_bitmap) {
+		/* Reboot nodes with no feature changes */
+		nodes = bitmap2node_name(boot_node_bitmap);
+		if (nodes) {
+			job_ptr->job_state |= JOB_CONFIGURING;
+			job_ptr->wait_all_nodes = 1;
+			job_ptr->bit_flags |= NODE_REBOOT;
+			pid = _run_prog(resume_prog, nodes, NULL,
+					job_ptr->job_id);
+			if (power_save_debug)
+				info("%s: pid %d reboot nodes %s",
+				     __func__, (int) pid, nodes);
+		} else {
+			error("%s: bitmap2nodename", __func__);
+			rc = SLURM_ERROR;
+		}
+		xfree(nodes);
+	}
 	FREE_NULL_BITMAP(boot_node_bitmap);
+	xfree(reboot_features);
+
 	last_node_update = now;
 
 	return rc;
@@ -542,7 +638,6 @@ static void _re_wake(void)
 		if (IS_NODE_ALLOCATED(node_ptr)   &&
 		    IS_NODE_NO_RESPOND(node_ptr)  &&
 		    !IS_NODE_POWER_SAVE(node_ptr) &&
-		    (bit_test(suspend_node_bitmap, i) == 0) &&
 		    (bit_test(resume_node_bitmap,  i) == 0)) {
 			if (wake_node_bitmap == NULL) {
 				wake_node_bitmap =
@@ -557,8 +652,9 @@ static void _re_wake(void)
 		nodes = bitmap2node_name(wake_node_bitmap);
 		if (nodes) {
 			pid_t pid = _run_prog(resume_prog, nodes, NULL, 0);
-			info("power_save: pid %d rewaking nodes %s",
-			     (int) pid, nodes);
+			if (power_save_debug)
+				info("power_save: pid %d rewaking nodes %s",
+				     (int) pid, nodes);
 		} else
 			error("power_save: bitmap2nodename");
 		xfree(nodes);
@@ -566,24 +662,28 @@ static void _re_wake(void)
 	}
 }
 
+static void _do_failed_nodes(char *hosts)
+{
+	pid_t pid = _run_prog(resume_fail_prog, hosts, NULL, 0);
+	if (power_save_debug)
+		info("power_save: pid %d handle failed nodes %s",
+		     (int)pid, hosts);
+}
+
 static void _do_resume(char *host)
 {
 	pid_t pid = _run_prog(resume_prog, host, NULL, 0);
-#if _DEBUG
-	info("power_save: pid %d waking nodes %s", (int) pid, host);
-#else
-	verbose("power_save: pid %d waking nodes %s", (int) pid, host);
-#endif
+	if (power_save_debug)
+		info("power_save: pid %d waking nodes %s",
+		     (int) pid, host);
 }
 
 static void _do_suspend(char *host)
 {
 	pid_t pid = _run_prog(suspend_prog, host, NULL, 0);
-#if _DEBUG
-	info("power_save: pid %d suspending nodes %s", (int) pid, host);
-#else
-	verbose("power_save: pid %d suspending nodes %s", (int) pid, host);
-#endif
+	if (power_save_debug)
+		info("power_save: pid %d suspending nodes %s",
+		     (int) pid, host);
 }
 
 /* run a suspend or resume program
@@ -650,7 +750,7 @@ static void _reap_procs(void)
 			continue;
 
 		delay = difftime(time(NULL), proc_track->child_time);
-		if (delay > max_timeout) {
+		if (power_save_debug && (delay > max_timeout)) {
 			info("power_save: program %d ran for %d sec",
 			     (int) proc_track->child_pid, delay);
 		}
@@ -723,11 +823,11 @@ static void _shutdown_power(void)
 			_kill_procs();
 			break;
 		} else if (i == 2) {
-			info("power_save: waiting for %d processes to "
-			     "complete", proc_cnt);
+			info("power_save: waiting for %d processes to complete",
+			     proc_cnt);
 		} else if (i % 5 == 0) {
-			debug("power_save: waiting for %d processes to "
-			      "complete", proc_cnt);
+			debug("power_save: waiting for %d processes to complete",
+			      proc_cnt);
 		}
 		sleep(1);
 	}
@@ -744,9 +844,11 @@ static void _clear_power_config(void)
 	FREE_NULL_LIST(partial_node_list);
 }
 
-/* Initialize power_save module parameters.
+/*
+ * Initialize power_save module parameters.
  * Return 0 on valid configuration to run power saving,
- * otherwise log the problem and return -1 */
+ * otherwise log the problem and return -1
+ */
 static int _init_power_config(void)
 {
 	last_config     = slurmctld_conf.last_update;
@@ -761,6 +863,8 @@ static int _init_power_config(void)
 	_clear_power_config();
 	if (slurmctld_conf.suspend_program)
 		suspend_prog = xstrdup(slurmctld_conf.suspend_program);
+	if (slurmctld_conf.resume_fail_program)
+		resume_fail_prog = xstrdup(slurmctld_conf.resume_fail_program);
 	if (slurmctld_conf.resume_program)
 		resume_prog = xstrdup(slurmctld_conf.resume_program);
 	if (slurmctld_conf.suspend_exc_nodes)
@@ -768,33 +872,52 @@ static int _init_power_config(void)
 	if (slurmctld_conf.suspend_exc_parts)
 		exc_parts = xstrdup(slurmctld_conf.suspend_exc_parts);
 
+	idle_on_node_suspend = xstrcasestr(slurmctld_conf.slurmctld_params,
+					   "idle_on_node_suspend");
+
 	if (idle_time < 0) {	/* not an error */
 		debug("power_save module disabled, SuspendTime < 0");
 		return -1;
 	}
 	if (suspend_rate < 0) {
 		error("power_save module disabled, SuspendRate < 0");
+		test_config_rc = 1;
 		return -1;
 	}
 	if (resume_rate < 0) {
 		error("power_save module disabled, ResumeRate < 0");
+		test_config_rc = 1;
 		return -1;
 	}
 	if (suspend_prog == NULL) {
 		error("power_save module disabled, NULL SuspendProgram");
+		test_config_rc = 1;
 		return -1;
 	} else if (!_valid_prog(suspend_prog)) {
 		error("power_save module disabled, invalid SuspendProgram %s",
 		      suspend_prog);
+		test_config_rc = 1;
 		return -1;
 	}
 	if (resume_prog == NULL) {
 		error("power_save module disabled, NULL ResumeProgram");
+		test_config_rc = 1;
 		return -1;
 	} else if (!_valid_prog(resume_prog)) {
 		error("power_save module disabled, invalid ResumeProgram %s",
 		      resume_prog);
+		test_config_rc = 1;
 		return -1;
+	}
+
+	if (slurmctld_conf.debug_flags & DEBUG_FLAG_POWER_SAVE)
+		power_save_debug = true;
+	else
+		power_save_debug = false;
+
+	if (resume_fail_prog && !_valid_prog(resume_fail_prog)) {
+		/* error's already reported in _valid_prog() */
+		xfree(resume_fail_prog);
 	}
 
 	return 0;
@@ -842,7 +965,8 @@ extern void config_power_mgr(void)
 	slurm_mutex_unlock(&power_mutex);
 }
 
-/* start_power_mgr - Start power management thread as needed. The thread
+/*
+ * start_power_mgr - Start power management thread as needed. The thread
  *	terminates automatically at slurmctld shutdown time.
  * IN thread_id - pointer to thread ID of the started pthread.
  */
@@ -875,6 +999,17 @@ extern bool power_save_test(void)
 	return rc;
 }
 
+/* Free module's allocated memory */
+extern void power_save_fini(void)
+{
+	slurm_mutex_lock(&power_mutex);
+	if (power_save_started) {     /* Already running */
+		power_save_started = false;
+		FREE_NULL_LIST(proc_track_list);
+	}
+	slurm_mutex_unlock(&power_mutex);
+}
+
 /*
  * init_power_save - Initialize the power save module. Started as a
  *	pthread. Terminates automatically at slurmctld shutdown time.
@@ -884,18 +1019,17 @@ static void *_init_power_save(void *arg)
 {
         /* Locks: Read nodes */
         slurmctld_lock_t node_read_lock = {
-                NO_LOCK, READ_LOCK, NO_LOCK, NO_LOCK, NO_LOCK };
+                NO_LOCK, NO_LOCK, READ_LOCK, NO_LOCK, NO_LOCK };
         /* Locks: Write nodes */
         slurmctld_lock_t node_write_lock = {
-                NO_LOCK, WRITE_LOCK, NO_LOCK, NO_LOCK, NO_LOCK };
+                NO_LOCK, NO_LOCK, WRITE_LOCK, NO_LOCK, NO_LOCK };
 	time_t now, boot_time = 0, last_power_scan = 0;
 
 	if (power_save_config && !power_save_enabled) {
 		debug("power_save mode not enabled");
-		return NULL;
+		goto fini;
 	}
 
-	suspend_node_bitmap = bit_alloc(node_record_count);
 	resume_node_bitmap  = bit_alloc(node_record_count);
 
 	while (slurmctld_config.shutdown_time == 0) {
@@ -938,13 +1072,13 @@ static void *_init_power_save(void *arg)
 	}
 
 fini:	_clear_power_config();
-	FREE_NULL_BITMAP(suspend_node_bitmap);
 	FREE_NULL_BITMAP(resume_node_bitmap);
 	_shutdown_power();
 	slurm_mutex_lock(&power_mutex);
 	list_destroy(proc_track_list);
 	proc_track_list = NULL;
 	power_save_enabled = false;
+	power_save_started = false;
 	slurm_cond_signal(&power_cond);
 	slurm_mutex_unlock(&power_mutex);
 	pthread_exit(NULL);

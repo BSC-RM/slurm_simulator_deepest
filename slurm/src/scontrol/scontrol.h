@@ -7,11 +7,11 @@
  *  Written by Morris Jette <jette1@llnl.gov>
  *  CODE-OCEC-09-009. All rights reserved.
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -27,13 +27,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -78,6 +78,7 @@ extern char *command_name;
 extern List clusters;
 extern int all_flag;	/* display even hidden partitions */
 extern int detail_flag;	/* display additional details */
+extern int future_flag;	/* display future nodes */
 extern int exit_code;	/* scontrol's exit code, =1 on any error at any time */
 extern int exit_flag;	/* program to terminate if =1 */
 extern int federation_flag; /* show federated jobs */
@@ -89,7 +90,6 @@ extern int sibling_flag; /* show sibling jobs (if any fed job). */
 extern uint32_t cluster_flags; /* what type of cluster are we talking to */
 extern uint32_t euid; /* send request to the slurmctld in behave of this user */
 
-extern block_info_msg_t *old_block_info_ptr;
 extern front_end_info_msg_t *old_front_end_info_ptr;
 extern job_info_msg_t *old_job_info_ptr;
 extern node_info_msg_t *old_node_info_ptr;
@@ -111,6 +111,7 @@ extern int	scontrol_job_notify(int argc, char **argv);
 extern int	scontrol_job_ready(char *job_id_str);
 extern void	scontrol_list_pids(const char *jobid_str,
 				   const char *node_name);
+extern void	scontrol_getent(const char *node_name);
 extern int	scontrol_load_front_end(front_end_info_msg_t **
 					front_end_buffer_pptr);
 extern int	scontrol_load_job(job_info_msg_t ** job_buffer_pptr,
@@ -120,9 +121,9 @@ extern int 	scontrol_load_nodes (node_info_msg_t ** node_buffer_pptr,
 				     uint16_t show_flags);
 extern int 	scontrol_load_partitions (partition_info_msg_t **
 					  part_info_pptr);
-extern int 	scontrol_load_block (block_info_msg_t **block_info_pptr);
 extern void	scontrol_pid_info(pid_t job_pid);
 extern void	scontrol_print_assoc_mgr_info(int argc, char **argv);
+extern void	scontrol_print_bbstat(int argc, char **argv);
 extern void	scontrol_print_burst_buffer(void);
 extern void	scontrol_print_completing (void);
 extern void	scontrol_print_completing_job(job_info_t *job_ptr,
@@ -139,14 +140,13 @@ extern void	scontrol_print_node (char *node_name,
 				     node_info_msg_t *node_info_ptr);
 extern void	scontrol_print_node_list (char *node_list);
 extern void	scontrol_print_part (char *partition_name);
-extern void	scontrol_print_block (char *block_name);
 extern void	scontrol_print_res (char *reservation_name);
 extern void	scontrol_print_step (char *job_step_id_str);
 extern void	scontrol_print_topo (char *node_list);
 extern void	scontrol_print_layout (int argc, char **argv);
 extern void	scontrol_print_powercap (char *node_list);
-extern void	scontrol_requeue(char *job_str);
-extern void	scontrol_requeue_hold(uint32_t state_flag, char *job_str);
+extern void	scontrol_requeue(uint32_t flags, char *job_str);
+extern void	scontrol_requeue_hold(uint32_t flags, char *job_str);
 extern void	scontrol_suspend(char *op, char *job_id_str);
 extern void	scontrol_top_job(char *job_str);
 extern int	scontrol_update_front_end (int argc, char **argv);
@@ -157,5 +157,10 @@ extern int	scontrol_update_part (int argc, char **argv);
 extern int	scontrol_update_res (int argc, char **argv);
 extern int	scontrol_update_step (int argc, char **argv);
 extern int	scontrol_update_powercap (int argc, char **argv);
+
+/* reboot_node.c */
+extern int      scontrol_cancel_reboot(char *nodes);
+extern int      scontrol_reboot_nodes(char *node_list, bool asap,
+				      uint32_t next_state, char *reason);
 
 #endif

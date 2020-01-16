@@ -6,11 +6,11 @@
  *  Written by Mark Grondona <mgrondona@llnl.gov>.
  *  CODE-OCEC-09-009. All rights reserved.
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -26,13 +26,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -56,6 +56,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <termios.h>
 #include <unistd.h>
 
 #include "src/common/cbuf.h"
@@ -1061,6 +1062,7 @@ _init_task_stdio_fds(stepd_step_task_info_t *task, stepd_step_rec_t *job)
 		/* create pipe and eio object */
 		int pout[2];
 #if HAVE_PTY_H
+		struct termios tio;
 		if (!(job->flags & LAUNCH_BUFFERED_IO)) {
 #if HAVE_SETRESUID
 			if (setresuid(geteuid(), geteuid(), 0) < 0)
@@ -1070,6 +1072,12 @@ _init_task_stdio_fds(stepd_step_task_info_t *task, stepd_step_rec_t *job)
 			if (openpty(pout, pout + 1, NULL, NULL, NULL) < 0) {
 				error("%s: stdout openpty: %m", __func__);
 				return SLURM_ERROR;
+			}
+			memset(&tio, 0, sizeof(tio));
+			if (tcgetattr(pout[1], &tio) == 0) {
+				tio.c_oflag &= ~OPOST;
+				if (tcsetattr(pout[1], 0, &tio) != 0)
+					error("%s: tcsetattr: %m", __func__);
 			}
 #if HAVE_SETRESUID
 			if (setresuid(0, getuid(), 0) < 0)
@@ -1697,19 +1705,19 @@ io_dup_stdio(stepd_step_task_info_t *t)
 {
 	if (dup2(t->stdin_fd, STDIN_FILENO  ) < 0) {
 		error("dup2(stdin): %m");
-		return SLURM_FAILURE;
+		return SLURM_ERROR;
 	}
 	fd_set_noclose_on_exec(STDIN_FILENO);
 
 	if (dup2(t->stdout_fd, STDOUT_FILENO) < 0) {
 		error("dup2(stdout): %m");
-		return SLURM_FAILURE;
+		return SLURM_ERROR;
 	}
 	fd_set_noclose_on_exec(STDOUT_FILENO);
 
 	if (dup2(t->stderr_fd, STDERR_FILENO) < 0) {
 		error("dup2(stderr): %m");
-		return SLURM_FAILURE;
+		return SLURM_ERROR;
 	}
 	fd_set_noclose_on_exec(STDERR_FILENO);
 
@@ -1860,18 +1868,12 @@ alloc_io_buf(void)
 {
 	struct io_buf *buf;
 
-	buf = (struct io_buf *)xmalloc(sizeof(struct io_buf));
-	if (!buf)
-		return NULL;
+	buf = xmalloc(sizeof(struct io_buf));
 	buf->ref_count = 0;
 	buf->length = 0;
 	/* The following "+ 1" is just temporary so I can stick a \0 at
 	   the end and do a printf of the data pointer */
 	buf->data = xmalloc(MAX_MSG_LEN + io_hdr_packed_size() + 1);
-	if (!buf->data) {
-		xfree(buf);
-		return NULL;
-	}
 
 	return buf;
 }

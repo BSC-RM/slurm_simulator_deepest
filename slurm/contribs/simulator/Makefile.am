@@ -3,11 +3,11 @@
 
 AUTOMAKE_OPTIONS = foreign
 
-LIBS = @LIBS@ -lrt
+LIBS = @LIBS@ -lrt -lm
 
 AM_CPPFLAGS = -I$(top_srcdir)
 
-bin_PROGRAMS = sim_mgr simdate edit_trace simqsnap  list_trace trace_builder update_trace
+bin_PROGRAMS = sim_mgr simdate edit_trace simqsnap  list_trace trace_builder update_trace #mysql_trace_builder
 
 sim_mgr_LDADD = 	$(top_builddir)/src/api/libslurm.o $(DL_LIBS) $(CMD_LDFLAGS)
 simdate_LDADD = 	$(top_builddir)/src/api/libslurm.o $(DL_LIBS) $(CMD_LDFLAGS)

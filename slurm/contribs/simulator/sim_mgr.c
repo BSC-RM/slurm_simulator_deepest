@@ -80,7 +80,7 @@ time_t time_incr = 1;     /* Amount to increment the simulated time by on each p
 int sync_loop_wait_time = 1000; /* minimum uSeconds that the sync loop waits
  	 	 	 	 	 	 	 	  before advancing to add time_incr to the
  	 	 	 	 	 	 	 	  simulated time*/
-int signaled  = 0;     /* signal from slurmd */
+int    signaled  = 0;     /* signal from slurmd */
 char*  workload_trace_file = NULL; /* Name of the file containing the workload to simulate */
 char   default_trace_file[] = "test.trace";
 char   help_msg[]= "sim_mgr [endtime]\n\t[-c | --compath <cpath>]\n\t[-f | "
@@ -240,15 +240,6 @@ char *re_write_dependencies(char *dep_string) {
 	return xstrdup(new_dep);
 }
 
-/* handler to USR2 signal*/
-/*void
-handlerSignal(int signo) {
-	printf ("SIM_MGR [%d] got a %d signal--signaled: %d\n", getpid(), signo, signaled);
-	//signaled++;
-	*slurmd_registered += 1; /*ANA: Replacing signals with shared vars for slurmd registration ***/
-//}*/
-
-
 void
 change_debug_level(int signum) {
 
@@ -308,18 +299,9 @@ time_mgr(void *arg) {
 
 	memset(timemgr_data, 0, 32); /* st on 14-October-2015 moved from build_shared_memory to here as only sim_mgr should change the values, even if someone else "built" the shm segment. */
 
-	current_sim[0]   = 1;
-	//current_sim[0]   = sim_start_point;
+	current_sim[0]   = sim_start_point;
 	current_micro[0] = 0;
 
-	/*signal (SIGUSR2, handlerSignal);*/
-	/*printf("Waiting for signals, signaled: %d...\n", signaled);
-	info("Waiting for signals..\n");
-	sleep(5);
-	while (signaled < 1 ){
-		printf("... signaled: %d\n", signaled);
-		sleep(5); 
-	}*/
 	/*ANA: Replacing signals with shared vars for slurmd registration ***/
 	info("Waiting for slurmd registrations, slurmd_registered: %d...",
                                 *slurmd_registered);
@@ -662,8 +644,7 @@ init_trace_info(void *ptr, int op) {
 		*new_trace_record = *(job_trace_t *)ptr;
 
 		if (count == 0) {
-			sim_start_point = new_trace_record->submit; //Why from the first submit, better current_sim[0]=1 and shift the input trace to start at for e.g. 10s? 
-			//sim_start_point = new_trace_record->submit - 60; //Why -60??
+			sim_start_point = new_trace_record->submit - 60;
 			/*first_submit = new_trace_record->submit;*/
 		}
 
@@ -960,13 +941,6 @@ main(int argc, char *argv[], char *envp[]) {
                 return -1;
         }
 
-	if(init_rsv_trace() < 0){
-                printf("An error was detected when reading trace file. \n"
-                       /*"Exiting...\n"*/);
-                /*return -1;*/
-        }
-
-
 	/* Launch the slurmctld and slurmd here */
 	if (launch_daemons) {
 		if(pid[0] == -1) fork_daemons(0);
@@ -975,6 +949,17 @@ main(int argc, char *argv[], char *envp[]) {
 		waitpid(pid[1], &status_slud, 0);
 	}
 
+/*	if(init_job_trace() < 0){
+		printf("An error was detected when reading trace file. "
+		       "Exiting...\n");
+		return -1;
+	}*/
+
+	if(init_rsv_trace() < 0){
+		printf("An error was detected when reading trace file. \n"
+		       /*"Exiting...\n"*/);
+		/*return -1;*/
+	}
 
 	pthread_attr_init(&attr);
 	signal(SIGINT, terminate_simulation);

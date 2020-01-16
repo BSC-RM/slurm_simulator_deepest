@@ -7,7 +7,8 @@ https://www.schedmd.com/downloads.php</a>.<br>
 Slurm has also been packaged for
 <a href="https://packages.debian.org/search?keywords=slurm-wlm">Debian</a> and
 <a href="http://packages.ubuntu.com/search?keywords=slurm-wlm">Ubuntu</a>
-(named <i>slurm-wlm</i> or <i>slurm-llnl</i> depending upon the version) and
+(named <i>slurm-wlm</i> or <i>slurm-llnl</i> depending upon the version),
+<a href="https://apps.fedoraproject.org/packages/slurm">Fedora</a>, and
 <a href="http://www.pkgsrc.org">NetBSD</a> (in pkgsrc) and
 <a href="http://www.freshports.org/sysutils/slurm-wlm/">FreeBSD</a>.</p>
 
@@ -46,12 +47,10 @@ for the application to manage Kerberos V credentials.</li>
 
 <li><b>Checkpoint/Restart</b></li>
 <ul>
-<li><a href="https://upc-bugs.lbl.gov/blcr/doc/html/">
-<b> BLCR (Berkeley Lab Checkpoint/Restart)</a></b>
 <li><a href="http://dmtcp.sourceforge.net/">
-<b>DMTCP (Distributed MultiThreaded CheckPointing)</a></b>
+<b>DMTCP (Distributed MultiThreaded CheckPointing)</a></b></li>
 <li><a href="https://computation.llnl.gov/project/scr/">
-<b>Scalable Checkpoint/Restart (SCR) for MPI</a></b>
+<b>Scalable Checkpoint/Restart (SCR) for MPI</a></b></li>
 </ul><br>
 
 <li><b>Databases</b> can be used to store accounting information.
@@ -60,14 +59,6 @@ See our <a href="accounting.html">Accounting</a> web page for more information.
 <li><a href="http://www.mysql.com/">MySQL</a></li>
 <li><a href="https://mariadb.org/">MariaDB</a></li>
 </ul><br>
-In addition, job completion data can be written to an
-<a href="http://www.elasticsearch.org/">elasticsearch</a> server using the
-"job_comp/elasticsearch" plugin.
-The plugin is currently available from
-<a href="https://github.com/asanchez1987/jobcomp-elasticsearch.git">
-https://github.com/asanchez1987/jobcomp-elasticsearch.git</a>
-and merged with the Slurm distribution.
-It may be included directly in a future release of Slurm.</li><br>
 
 <li><b>Debuggers</b> and debugging tools</li>
 <ul>
@@ -76,17 +67,6 @@ is a GUI-based source code debugger well suited for parallel applications.</li>
 <li><a href="http://padb.pittman.org.uk/"><b>Padb</b></a>
 is a job inspection tool for examining and debugging parallel programs, primarily it simplifies the process of gathering stack traces but also supports a wide range of other functions.
 It's an open source, non-interactive, command line, scriptable tool intended for use by programmers and system administrators alike.</li>
-</ul><br>
-
-<li><b>Digital signatures</b> (Cypto plugin) are used to ensure message are not altered.</li>
-<ul>
-<li><b>MUNGE</b> (recommended)<br>
-MUNGE can be used at an alternative to OpenSSL.
-MUNGE is available under the Gnu General Public License.
-See MUNGE download information above.</li>
-<li><b>OpenSSL</b><br>
-OpenSSL may be used as an alternative to MUNGE for generation of digital signatures.
-Download it from <a href="http://www.openssl.org/">http://www.openssl.org/</a>.</li>
 </ul><br>
 
 <li><b>DRMAA (Distributed Resource Management Application API)</b><br>
@@ -99,7 +79,7 @@ Using DRMAA, grid applications builders, portal developers and ISVs can use
 the same high-level API to link their software with different cluster/resource
 management systems.<br><br>
 There is a variant of PSNC DRMAA providing support for Slurm's --cluster option
-avaiable from
+available from
 <a href="https://github.com/natefoo/slurm-drmaa">https://github.com/natefoo/slurm-drmaa</a>.<br><br>
 Perl 6 DRMAA bindings are available from
 <a href="https://github.com/scovit/Scheduler-DRMAA">https://github.com/scovit/Scheduler-DRMAA</a>.
@@ -114,9 +94,8 @@ http://www.nsc.liu.se/~kent/python-hostlist</a><br><br>
 Lua bindings for hostlist functions are also available here:<br>
 <a href="https://github.com/grondo/lua-hostlist">
 https://github.com/grondo/lua-hostlist</a><br>
-<b>NOTE:</b> The Lua  hostlist functions do not support the
-IBM Bluegene naming convention or bracketed numeric ranges
-anywhere except at the end of the name (i.e. "bgq[0000x1333]"
+<b>NOTE:</b> The Lua  hostlist functions do not support the bracketed numeric
+ranges anywhere except at the end of the name (i.e. "tux[0001-0100]"
 and "rack[0-3]_blade[0-63]" are not supported).</li><br>
 
 <li><b>Interactive Script</b><br>
@@ -366,7 +345,7 @@ easy and elegantly manner.
 </ul></li><br>
 
 <li><a name="json"><b>JSON</b></a><br>
-Some Slurm plugins (burst_buffer/cray and power/cray) plugins
+Some Slurm plugins (burst_buffer/datawarp and power/cray_aries) plugins
 parse JSON format data.
 These plugins are designed to make use of the JSON-C library for this purpose.
 Instructions for the build are as follows:
@@ -413,6 +392,6 @@ Slurm-based HPC supercomputers. The website of Slurm-web, with screenshots:<br>
 
 </ul>
 
-<p style="text-align:center;">Last modified 16 October 2017</p>
+<p style="text-align:center;">Last modified 15 July 2019</p>
 
 <!--#include virtual="footer.txt"-->

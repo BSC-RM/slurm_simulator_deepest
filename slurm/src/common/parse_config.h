@@ -8,11 +8,11 @@
  *  Written by Christopher J. Morrone <morrone2@llnl.gov>.
  *  CODE-OCEC-09-009. All rights reserved.
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -28,13 +28,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -621,6 +621,22 @@ int s_p_get_boolean(bool *flag, const char *key, const s_p_hashtbl_t *hashtbl);
 void s_p_dump_values(const s_p_hashtbl_t *hashtbl,
 		     const s_p_options_t options[]);
 
+
+/*
+ * Given an "options" array, pack the key, type of options along with values and
+ * op of the hashtbl.
+ *
+ * Primarily for sending a table across the network so you don't have to read a
+ * file in.
+ */
+extern Buf s_p_pack_hashtbl(const s_p_hashtbl_t *hashtbl,
+			   const s_p_options_t options[],
+			   const uint32_t cnt);
+
+/*
+ * Given a buffer, unpack key, type, op and value into a hashtbl.
+ */
+extern s_p_hashtbl_t *s_p_unpack_hashtbl(Buf buffer);
 
 /*
  * copy options onto the end of full_options

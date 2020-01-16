@@ -6,11 +6,11 @@
  *  Written by Morris Jette <jette1@llnl.gov>, Danny Auble <da@llnl.gov>
  *  CODE-OCEC-09-009. All rights reserved.
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -26,13 +26,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -49,6 +49,7 @@
 #include "src/common/macros.h"
 #include "src/common/pack.h"
 #include "src/common/slurmdbd_defs.h"
+#include "src/common/slurmdbd_pack.h"
 #include "src/common/slurm_accounting_storage.h"
 #include "src/common/slurm_jobacct_gather.h"
 #include "src/common/slurm_protocol_api.h"
@@ -182,7 +183,6 @@ static int   _modify_reservation(slurmdbd_conn_t *slurmdbd_conn,
 				 uint32_t *uid);
 static int   _node_state(slurmdbd_conn_t *slurmdbd_conn,
 			 persist_msg_t *msg, Buf *out_buffer, uint32_t *uid);
-static char *_node_state_string(uint16_t node_state);
 static void  _process_job_start(slurmdbd_conn_t *slurmdbd_conn,
 				dbd_job_start_msg_t *job_start_msg,
 				dbd_id_rc_msg_t *id_rc_msg);
@@ -659,11 +659,27 @@ static void _add_registered_cluster(slurmdbd_conn_t *db_conn)
 	ListIterator itr;
 	slurmdbd_conn_t *slurmdbd_conn;
 
+	if (!db_conn->conn->rem_port) {
+		error("%s: trying to register a cluster (%s) with no remote port",
+		      __func__, db_conn->conn->cluster_name);
+		return;
+	}
+
 	slurm_mutex_lock(&registered_lock);
 	itr = list_iterator_create(registered_clusters);
 	while ((slurmdbd_conn = list_next(itr))) {
 		if (db_conn == slurmdbd_conn)
 			break;
+
+		if (!xstrcmp(db_conn->conn->cluster_name,
+			     slurmdbd_conn->conn->cluster_name) &&
+		    (db_conn->conn->fd != slurmdbd_conn->conn->fd)) {
+			error("A new registration for cluster %s CONN:%d just came in, but I am already talking to that cluster (CONN:%d), closing other connection.",
+			      db_conn->conn->cluster_name, db_conn->conn->fd,
+			      slurmdbd_conn->conn->fd);
+			slurmdbd_conn->conn->rem_port = 0;
+			list_delete_item(itr);
+		}
 	}
 	list_iterator_destroy(itr);
 	if (!slurmdbd_conn)
@@ -717,7 +733,7 @@ static int _handle_init_msg(slurmdbd_conn_t *slurmdbd_conn,
 	   avoid such a slow down.
 	*/
 	slurmdbd_conn->db_conn = acct_storage_g_get_connection(
-		false, slurmdbd_conn->conn->fd, true,
+		NULL, slurmdbd_conn->conn->fd, NULL, true,
 		slurmdbd_conn->conn->cluster_name);
 	slurmdbd_conn->conn->version = init_msg->version;
 	if (errno)
@@ -740,8 +756,7 @@ static int _unpack_persist_init(slurmdbd_conn_t *slurmdbd_conn,
 		drop_priv = true;
 #endif
 
-	req_msg->uid = g_slurm_auth_get_uid(
-		slurmdbd_conn->conn->auth_cred, slurmdbd_conf->auth_info);
+	req_msg->uid = g_slurm_auth_get_uid(slurmdbd_conn->conn->auth_cred);
 
 	/* If the client happens to be a newer version than we are make it so
 	 * they talk language I understand.
@@ -754,8 +769,10 @@ static int _unpack_persist_init(slurmdbd_conn_t *slurmdbd_conn,
 	if (rc != SLURM_SUCCESS)
 		comment = slurm_strerror(rc);
 
-	*out_buffer = slurm_persist_make_rc_msg(slurmdbd_conn->conn,
-						rc, comment, req_msg->version);
+	*out_buffer = slurm_persist_make_rc_msg_flags(
+		slurmdbd_conn->conn, rc, comment,
+		slurmdbd_conf->persist_conn_rc_flags,
+		req_msg->version);
 
 	return rc;
 }
@@ -785,8 +802,16 @@ static int _fix_runaway_jobs(slurmdbd_conn_t *slurmdbd_conn, persist_msg_t *msg,
 	dbd_list_msg_t *get_msg = msg->data;
 	char *comment = NULL;
 
-	rc = acct_storage_g_fix_runaway_jobs(slurmdbd_conn->db_conn, *uid,
-					     get_msg->my_list);
+	if (!_validate_operator(*uid, slurmdbd_conn))
+		rc = ESLURM_ACCESS_DENIED;
+	else
+		rc = acct_storage_g_fix_runaway_jobs(
+			slurmdbd_conn->db_conn, *uid, get_msg->my_list);
+
+	if (rc == ESLURM_ACCESS_DENIED) {
+		comment = "You must have an AdminLevel>=Operator to fix runaway jobs";
+		error("CONN:%u %s", slurmdbd_conn->conn->fd, comment);
+	}
 
 	*out_buffer = slurm_persist_make_rc_msg(slurmdbd_conn->conn,
 						rc, comment,
@@ -861,7 +886,7 @@ static int _add_assocs(slurmdbd_conn_t *slurmdbd_conn,
 		memset(&user, 0, sizeof(slurmdb_user_rec_t));
 		user.uid = *uid;
 		if (assoc_mgr_fill_in_user(
-			    slurmdbd_conn->db_conn, &user, 1, NULL)
+			    slurmdbd_conn->db_conn, &user, 1, NULL, false)
 		    != SLURM_SUCCESS) {
 			comment = "Your user has not been added to the accounting system yet.";
 			error("CONN:%u %s", slurmdbd_conn->conn->fd, comment);
@@ -1036,6 +1061,7 @@ static int _add_reservation(slurmdbd_conn_t *slurmdbd_conn,
 	int rc = SLURM_SUCCESS;
 	dbd_rec_msg_t *rec_msg = msg->data;
 	char *comment = NULL;
+
 #ifndef SLURM_SIMULATOR
 	if (!_validate_slurm_user(*uid)) {
 		comment = "DBD_ADD_RESV message from invalid uid";
@@ -1141,6 +1167,7 @@ static int _cluster_tres(slurmdbd_conn_t *slurmdbd_conn,
 	dbd_cluster_tres_msg_t *cluster_tres_msg = msg->data;
 	int rc = SLURM_SUCCESS;
 	char *comment = NULL;
+
 #ifndef SLURM_SIMULATOR
 	if (!_validate_slurm_user(*uid)) {
 		comment = "DBD_CLUSTER_TRES message from invalid uid";
@@ -1149,6 +1176,7 @@ static int _cluster_tres(slurmdbd_conn_t *slurmdbd_conn,
 		goto end_it;
 	}
 #endif
+
 	debug2("DBD_CLUSTER_TRES: called for %s(%s)",
 	       slurmdbd_conn->conn->cluster_name,
 	       cluster_tres_msg->tres_str);
@@ -1170,7 +1198,7 @@ end_it:
 		cluster_tres_msg->tres_str = NULL;
 	}
 	if (!slurmdbd_conn->conn->rem_port) {
-		info("DBD_CLUSTER_TRES: cluster not registered");
+		debug3("DBD_CLUSTER_TRES: cluster not registered");
 		slurmdbd_conn->conn->rem_port =
 			clusteracct_storage_g_register_disconn_ctld(
 				slurmdbd_conn->db_conn,
@@ -1416,13 +1444,24 @@ static int _get_jobs_cond(slurmdbd_conn_t *slurmdbd_conn,
 {
 	dbd_cond_msg_t *cond_msg = msg->data;
 	dbd_list_msg_t list_msg = { NULL };
-	slurmdb_job_cond_t *job_cond = msg->data;
+	slurmdb_job_cond_t *job_cond = cond_msg->cond;
 	int rc = SLURM_SUCCESS;
 
 	debug2("DBD_GET_JOBS_COND: called");
 
+	/* fail early if requesting runaways and not super user */
+	if ((job_cond->flags & JOBCOND_FLAG_RUNAWAY) &&
+	    !_validate_operator(*uid, slurmdbd_conn)) {
+		debug("Rejecting query of runaways from uid %u", *uid);
+		*out_buffer = slurm_persist_make_rc_msg(
+			slurmdbd_conn->conn,
+			ESLURM_ACCESS_DENIED,
+			"You must have an AdminLevel>=Operator to fix runaway jobs",
+			DBD_GET_JOBS_COND);
+		return SLURM_ERROR;
+	}
 	/* fail early if too wide a query */
-	if (!_validate_slurm_user(*uid)
+	if (!job_cond->step_list && !_validate_operator(*uid, slurmdbd_conn)
 	    && (slurmdbd_conf->max_time_range != INFINITE)) {
 		time_t start, end;
 
@@ -1445,7 +1484,7 @@ static int _get_jobs_cond(slurmdbd_conn_t *slurmdbd_conn,
 	}
 
 	list_msg.my_list = jobacct_storage_g_get_jobs_cond(
-		slurmdbd_conn->db_conn, *uid, cond_msg->cond);
+		slurmdbd_conn->db_conn, *uid, job_cond);
 
 	if (!errno) {
 		if (!list_msg.my_list)
@@ -1787,6 +1826,7 @@ static int _flush_jobs(slurmdbd_conn_t *slurmdbd_conn,
 	dbd_cluster_tres_msg_t *cluster_tres_msg = msg->data;
 	int rc = SLURM_SUCCESS;
 	char *comment = NULL;
+
 #ifndef SLURM_SIMULATOR
 	if (!_validate_slurm_user(*uid)) {
 		comment = "DBD_FLUSH_JOBS message from invalid uid";
@@ -1877,6 +1917,7 @@ static int  _job_complete(slurmdbd_conn_t *slurmdbd_conn,
 	struct job_details details;
 	int rc = SLURM_SUCCESS;
 	char *comment = NULL;
+
 #ifndef SLURM_SIMULATOR
 	if (!_validate_slurm_user(*uid)) {
 		comment = "DBD_JOB_COMPLETE message from invalid uid";
@@ -1886,6 +1927,7 @@ static int  _job_complete(slurmdbd_conn_t *slurmdbd_conn,
 		goto end_it;
 	}
 #endif
+
 	memset(&job, 0, sizeof(struct job_record));
 	memset(&details, 0, sizeof(struct job_details));
 
@@ -1904,6 +1946,7 @@ static int  _job_complete(slurmdbd_conn_t *slurmdbd_conn,
 	job.start_time = job_comp_msg->start_time;
 	details.submit_time = job_comp_msg->submit_time;
 	job.start_protocol_ver = slurmdbd_conn->conn->version;
+	job.system_comment = job_comp_msg->system_comment;
 	job.tres_alloc_str = job_comp_msg->tres_alloc_str;
 
 	job.details = &details;
@@ -1923,7 +1966,7 @@ static int  _job_complete(slurmdbd_conn_t *slurmdbd_conn,
 	xfree(job.wckey);
 
 	if (!slurmdbd_conn->conn->rem_port) {
-		info("DBD_JOB_COMPLETE: cluster not registered");
+		debug3("DBD_JOB_COMPLETE: cluster not registered");
 		slurmdbd_conn->conn->rem_port =
 			clusteracct_storage_g_register_disconn_ctld(
 				slurmdbd_conn->db_conn,
@@ -1944,6 +1987,7 @@ static int  _job_start(slurmdbd_conn_t *slurmdbd_conn,
 	dbd_job_start_msg_t *job_start_msg = msg->data;
 	dbd_id_rc_msg_t id_rc_msg;
 	char *comment = NULL;
+
 #ifndef SLURM_SIMULATOR
 	if (!_validate_slurm_user(*uid)) {
 		comment = "DBD_JOB_START message from invalid uid";
@@ -1973,6 +2017,7 @@ static int  _job_suspend(slurmdbd_conn_t *slurmdbd_conn,
 	struct job_details details;
 	int rc = SLURM_SUCCESS;
 	char *comment = NULL;
+
 #ifndef SLURM_SIMULATOR
 	if (!_validate_slurm_user(*uid)) {
 		comment = "DBD_JOB_SUSPEND message from invalid uid";
@@ -1982,6 +2027,7 @@ static int  _job_suspend(slurmdbd_conn_t *slurmdbd_conn,
 		goto end_it;
 	}
 #endif
+
 	debug2("DBD_JOB_SUSPEND: ID:%u STATE:%s",
 	       job_suspend_msg->job_id,
 	       job_state_string(job_suspend_msg->job_state));
@@ -2242,10 +2288,19 @@ static int   _modify_job(slurmdbd_conn_t *slurmdbd_conn,
 		return rc;
 	}
 
-	*out_buffer = init_buf(1024);
-	pack16((uint16_t) DBD_GOT_LIST, *out_buffer);
-	slurmdbd_pack_list_msg(&list_msg, slurmdbd_conn->conn->version,
-			       DBD_GOT_LIST, *out_buffer);
+	if (get_msg->cond &&
+	    (((slurmdb_job_modify_cond_t *)get_msg->cond)->flags &
+	     SLURMDB_MODIFY_NO_WAIT)) {
+		*out_buffer = slurm_persist_make_rc_msg(slurmdbd_conn->conn,
+							rc, comment,
+							DBD_MODIFY_JOB);
+	} else {
+		*out_buffer = init_buf(1024);
+		pack16((uint16_t) DBD_GOT_LIST, *out_buffer);
+		slurmdbd_pack_list_msg(&list_msg, slurmdbd_conn->conn->version,
+				       DBD_GOT_LIST, *out_buffer);
+	}
+
 	FREE_NULL_LIST(list_msg.my_list);
 
 	return rc;
@@ -2504,6 +2559,7 @@ static int _modify_reservation(slurmdbd_conn_t *slurmdbd_conn,
 	int rc = SLURM_SUCCESS;
 	dbd_rec_msg_t *rec_msg = msg->data;
 	char *comment = NULL;
+
 #ifndef SLURM_SIMULATOR
 	if (!_validate_slurm_user(*uid)) {
 		comment = "DBD_MODIFY_RESV message from invalid uid";
@@ -2531,6 +2587,7 @@ static int _node_state(slurmdbd_conn_t *slurmdbd_conn,
 	struct node_record node_ptr;
 	int rc = SLURM_SUCCESS;
 	char *comment = NULL;
+
 #ifndef SLURM_SIMULATOR
 	if (!_validate_slurm_user(*uid)) {
 		comment = "DBD_NODE_STATE message from invalid uid";
@@ -2540,6 +2597,7 @@ static int _node_state(slurmdbd_conn_t *slurmdbd_conn,
 		goto end_it;
 	}
 #endif
+
 	memset(&node_ptr, 0, sizeof(struct node_record));
 	node_ptr.name = node_state_msg->hostlist;
 	node_ptr.tres_str = node_state_msg->tres_str;
@@ -2554,9 +2612,8 @@ static int _node_state(slurmdbd_conn_t *slurmdbd_conn,
 		node_state_msg->new_state = DBD_NODE_STATE_UP;
 
 	if (node_state_msg->new_state == DBD_NODE_STATE_UP) {
-		debug2("DBD_NODE_STATE: NODE:%s STATE:%s REASON:%s TIME:%ld",
+		debug2("DBD_NODE_STATE_UP: NODE:%s REASON:%s TIME:%ld",
 		       node_state_msg->hostlist,
-		       _node_state_string(node_state_msg->new_state),
 		       node_state_msg->reason,
 		       (long)node_state_msg->event_time);
 
@@ -2570,10 +2627,9 @@ static int _node_state(slurmdbd_conn_t *slurmdbd_conn,
 			node_state_msg->event_time);
 		xfree(node_ptr.reason);
 	} else {
-		debug2("DBD_NODE_STATE: NODE:%s STATE:%s "
-		       "REASON:%s UID:%u TIME:%ld",
+		debug2("DBD_NODE_STATE_DOWN: NODE:%s STATE:%s REASON:%s UID:%u TIME:%ld",
 		       node_state_msg->hostlist,
-		       _node_state_string(node_state_msg->new_state),
+		       node_state_string(node_state_msg->state),
 		       node_state_msg->reason,
 		       node_ptr.reason_uid,
 		       (long)node_state_msg->event_time);
@@ -2588,17 +2644,6 @@ end_it:
 	*out_buffer = slurm_persist_make_rc_msg(slurmdbd_conn->conn,
 						rc, comment, DBD_NODE_STATE);
 	return SLURM_SUCCESS;
-}
-
-static char *_node_state_string(uint16_t node_state)
-{
-	switch(node_state) {
-	case DBD_NODE_STATE_DOWN:
-		return "DOWN";
-	case DBD_NODE_STATE_UP:
-		return "UP";
-	}
-	return "UNKNOWN";
 }
 
 static void _process_job_start(slurmdbd_conn_t *slurmdbd_conn,
@@ -2622,7 +2667,6 @@ static void _process_job_start(slurmdbd_conn_t *slurmdbd_conn,
 	array_recs.max_run_tasks = job_start_msg->array_max_tasks;
 	array_recs.task_cnt = job_start_msg->array_task_pending;
 	job.assoc_id = job_start_msg->assoc_id;
-	job.comment = job_start_msg->block_id;
 	if (job_start_msg->db_index != NO_VAL64)
 		job.db_index = job_start_msg->db_index;
 	details.begin_time = job_start_msg->eligible_time;
@@ -2653,6 +2697,9 @@ static void _process_job_start(slurmdbd_conn_t *slurmdbd_conn,
 	job.wckey = _replace_double_quotes(job_start_msg->wckey);
 	details.work_dir = _replace_double_quotes(job_start_msg->work_dir);
 	details.submit_time = job_start_msg->submit_time;
+	job.db_flags = job_start_msg->db_flags;
+	details.features = _replace_double_quotes(job_start_msg->constraints);
+	job.state_reason_prev_db = job_start_msg->state_reason_prev;
 
 	job.array_recs = &array_recs;
 	job.details = &details;
@@ -2681,7 +2728,7 @@ static void _process_job_start(slurmdbd_conn_t *slurmdbd_conn,
 		xfree(job.wckey);
 
 	if (!slurmdbd_conn->conn->rem_port) {
-		info("DBD_JOB_START: cluster not registered");
+		debug3("DBD_JOB_START: cluster not registered");
 		slurmdbd_conn->conn->rem_port =
 			clusteracct_storage_g_register_disconn_ctld(
 				slurmdbd_conn->db_conn,
@@ -2726,6 +2773,7 @@ static int   _register_ctld(slurmdbd_conn_t *slurmdbd_conn,
 	slurmdb_cluster_cond_t cluster_q;
 	slurmdb_cluster_rec_t cluster;
 	dbd_list_msg_t list_msg = { NULL };
+
 #ifndef SLURM_SIMULATOR
 	if (!_validate_slurm_user(*uid)) {
 		comment = "DBD_REGISTER_CTLD message from invalid uid";
@@ -3226,6 +3274,7 @@ static int _remove_reservation(slurmdbd_conn_t *slurmdbd_conn,
 	int rc = SLURM_SUCCESS;
 	dbd_rec_msg_t *rec_msg = msg->data;
 	char *comment = NULL;
+
 #ifndef SLURM_SIMULATOR
 	if (!_validate_slurm_user(*uid)) {
 		comment = "DBD_REMOVE_RESV message from invalid uid";
@@ -3295,6 +3344,7 @@ static int   _send_mult_job_start(slurmdbd_conn_t *slurmdbd_conn,
 	dbd_job_start_msg_t *job_start_msg;
 	dbd_id_rc_msg_t *id_rc_msg;
 	/* DEF_TIMERS; */
+
 #ifndef SLURM_SIMULATOR
 	if (!_validate_slurm_user(*uid)) {
 		comment = "DBD_SEND_MULT_JOB_START message from invalid uid";
@@ -3306,6 +3356,7 @@ static int   _send_mult_job_start(slurmdbd_conn_t *slurmdbd_conn,
 		return SLURM_ERROR;
 	}
 #endif
+
 	list_msg.my_list = list_create(slurmdbd_free_id_rc_msg);
 	/* START_TIMER; */
 	itr = list_iterator_create(get_msg->my_list);
@@ -3340,6 +3391,7 @@ static int   _send_mult_msg(slurmdbd_conn_t *slurmdbd_conn,
 	Buf req_buf = NULL, ret_buf = NULL;
 	int rc = SLURM_SUCCESS;
 	/* DEF_TIMERS; */
+
 #ifndef SLURM_SIMULATOR
 	if (!_validate_slurm_user(*uid)) {
 		comment = "DBD_SEND_MULT_MSG message from invalid uid";
@@ -3351,6 +3403,7 @@ static int   _send_mult_msg(slurmdbd_conn_t *slurmdbd_conn,
 		return SLURM_ERROR;
 	}
 #endif
+
 	list_msg.my_list = list_create(slurmdbd_free_buffer);
 	/* START_TIMER; */
 	itr = list_iterator_create(get_msg->my_list);
@@ -3396,6 +3449,7 @@ static int  _step_complete(slurmdbd_conn_t *slurmdbd_conn,
 	struct job_details details;
 	int rc = SLURM_SUCCESS;
 	char *comment = NULL;
+
 #ifndef SLURM_SIMULATOR
 	if (!_validate_slurm_user(*uid)) {
 		comment = "DBD_STEP_COMPLETE message from invalid uid";
@@ -3404,6 +3458,7 @@ static int  _step_complete(slurmdbd_conn_t *slurmdbd_conn,
 		goto end_it;
 	}
 #endif
+
 	debug2("DBD_STEP_COMPLETE: ID:%u.%u SUBMIT:%lu",
 	       step_comp_msg->job_id, step_comp_msg->step_id,
 	       (unsigned long) step_comp_msg->job_submit_time);
@@ -3439,7 +3494,7 @@ static int  _step_complete(slurmdbd_conn_t *slurmdbd_conn,
 	xfree(job.wckey);
 
 	if (!slurmdbd_conn->conn->rem_port) {
-		info("DBD_STEP_COMPLETE: cluster not registered");
+		debug3("DBD_STEP_COMPLETE: cluster not registered");
 		slurmdbd_conn->conn->rem_port =
 			clusteracct_storage_g_register_disconn_ctld(
 				slurmdbd_conn->db_conn,
@@ -3464,6 +3519,7 @@ static int  _step_start(slurmdbd_conn_t *slurmdbd_conn,
 	slurm_step_layout_t layout;
 	int rc = SLURM_SUCCESS;
 	char *comment = NULL;
+
 #ifndef SLURM_SIMULATOR
 	if (!_validate_slurm_user(*uid)) {
 		comment = "DBD_STEP_START message from invalid uid";
@@ -3472,6 +3528,7 @@ static int  _step_start(slurmdbd_conn_t *slurmdbd_conn,
 		goto end_it;
 	}
 #endif
+
 	debug2("DBD_STEP_START: ID:%u.%u NAME:%s SUBMIT:%lu",
 	       step_start_msg->job_id, step_start_msg->step_id,
 	       step_start_msg->name,
@@ -3515,7 +3572,7 @@ static int  _step_start(slurmdbd_conn_t *slurmdbd_conn,
 	xfree(job.wckey);
 
 	if (!slurmdbd_conn->conn->rem_port) {
-		info("DBD_STEP_START: cluster not registered");
+		debug3("DBD_STEP_START: cluster not registered");
 		slurmdbd_conn->conn->rem_port =
 			clusteracct_storage_g_register_disconn_ctld(
 				slurmdbd_conn->db_conn,

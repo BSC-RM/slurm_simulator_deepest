@@ -6,11 +6,11 @@
  *  Written by Mark Grondona <mgrondona@llnl.gov>.
  *  CODE-OCEC-09-009. All rights reserved.
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -26,23 +26,27 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
-#include "config.h"
+#define _GNU_SOURCE	/* For POLLRDHUP */
 
 #include <errno.h>
 #include <poll.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__)
+#define POLLRDHUP POLLHUP
+#endif
 
 #include "src/common/fd.h"
 #include "src/common/eio.h"
@@ -88,9 +92,7 @@ struct eio_handle_components {
 	List new_objs;
 };
 
-
-/* Function prototypes
- */
+/* Function prototypes */
 
 static int          _poll_internal(struct pollfd *pfds, unsigned int nfds,
 				   time_t shutdown_time);
@@ -100,13 +102,12 @@ static void         _poll_dispatch(struct pollfd *, unsigned int, eio_obj_t **,
 static void         _poll_handle_event(short revents, eio_obj_t *obj,
 		                       List objList);
 
-
 eio_handle_t *eio_handle_create(uint16_t shutdown_wait)
 {
 	eio_handle_t *eio = xmalloc(sizeof(*eio));
 
 	if (pipe(eio->fds) < 0) {
-		error ("eio_create: pipe: %m");
+		error("%s: pipe: %m", __func__);
 		eio_handle_destroy(eio);
 		return (NULL);
 	}
@@ -144,9 +145,9 @@ void eio_handle_destroy(eio_handle_t *eio)
 
 bool eio_message_socket_readable(eio_obj_t *obj)
 {
-	debug3("Called eio_message_socket_readable %d %d",
-	       obj->shutdown, obj->fd);
 	xassert(obj);
+	debug3("%s: shutdown %d fd %d", __func__, obj->shutdown, obj->fd);
+
 	if (obj->shutdown == true) {
 		if (obj->fd != -1) {
 			debug2("  false, shutdown");
@@ -169,11 +170,12 @@ int eio_message_socket_accept(eio_obj_t *obj, List objs)
 	slurm_msg_t *msg = NULL;
 	int len = sizeof(addr);
 
-	debug3("Called eio_msg_socket_accept");
+	debug3("%s: start", __func__);
 
 	xassert(obj);
 	xassert(obj->ops->handle_msg);
 
+	bzero(&addr, sizeof(struct sockaddr_in));      /* Prevent CLANG error */
 	while ((fd = accept(obj->fd, (struct sockaddr *)&addr,
 			    (socklen_t *)&len)) < 0) {
 		if (errno == EINTR)
@@ -237,7 +239,7 @@ int eio_signal_shutdown(eio_handle_t *eio)
 	eio->shutdown_time = time(NULL);
 	slurm_mutex_unlock(&eio->shutdown_mutex);
 	if (write(eio->fds[1], &c, sizeof(char)) != 1)
-		return error("eio_handle_signal_shutdown: write; %m");
+		return error("%s: write; %m", __func__);
 	return 0;
 }
 
@@ -245,7 +247,7 @@ int eio_signal_wakeup(eio_handle_t *eio)
 {
 	char c = 0;
 	if (write(eio->fds[1], &c, sizeof(char)) != 1)
-		return error("eio_handle_signal_wake: write; %m");
+		return error("%s: write; %m", __func__);
 	return 0;
 }
 
@@ -339,21 +341,22 @@ int eio_handle_mainloop(eio_handle_t *eio)
 		slurm_mutex_unlock(&eio->shutdown_mutex);
 		if (shutdown_time &&
 		    (difftime(time(NULL), shutdown_time)>=eio->shutdown_wait)) {
-			error("%s: Abandoning IO %d secs after job shutdown "
-			      "initiated", __func__, eio->shutdown_wait);
+			error("%s: Abandoning IO %d secs after job shutdown initiated",
+			      __func__, eio->shutdown_wait);
 			break;
 		}
 	}
-  error:
+
+error:
 	retval = -1;
-  done:
+done:
 	xfree(pollfds);
 	xfree(map);
 	return retval;
 }
 
-static int
-_poll_internal(struct pollfd *pfds, unsigned int nfds, time_t shutdown_time)
+static int _poll_internal(struct pollfd *pfds, unsigned int nfds,
+			  time_t shutdown_time)
 {
 	int n, timeout;
 
@@ -376,20 +379,18 @@ _poll_internal(struct pollfd *pfds, unsigned int nfds, time_t shutdown_time)
 	return n;
 }
 
-static bool
-_is_writable(eio_obj_t *obj)
+static bool _is_writable(eio_obj_t *obj)
 {
 	return (obj->ops->writable && (*obj->ops->writable)(obj));
 }
 
-static bool
-_is_readable(eio_obj_t *obj)
+static bool _is_readable(eio_obj_t *obj)
 {
 	return (obj->ops->readable && (*obj->ops->readable)(obj));
 }
 
-static unsigned int
-_poll_setup_pollfds(struct pollfd *pfds, eio_obj_t *map[], List l)
+static unsigned int _poll_setup_pollfds(struct pollfd *pfds, eio_obj_t *map[],
+					List l)
 {
 	ListIterator  i    = list_iterator_create(l);
 	eio_obj_t    *obj  = NULL;
@@ -397,7 +398,7 @@ _poll_setup_pollfds(struct pollfd *pfds, eio_obj_t *map[], List l)
 	bool          readable, writable;
 
 	if (!pfds) {	/* Fix for CLANG false positive */
-		fatal("pollfd data structure is null");
+		fatal("%s: pollfd data structure is null", __func__);
 		return nfds;
 	}
 
@@ -406,23 +407,13 @@ _poll_setup_pollfds(struct pollfd *pfds, eio_obj_t *map[], List l)
 		readable = _is_readable(obj);
 		if (writable && readable) {
 			pfds[nfds].fd     = obj->fd;
-#ifdef POLLRDHUP
-/* Available since Linux 2.6.17 */
 			pfds[nfds].events = POLLOUT | POLLIN |
 					    POLLHUP | POLLRDHUP;
-#else
-			pfds[nfds].events = POLLOUT | POLLIN | POLLHUP;
-#endif
 			map[nfds]         = obj;
 			nfds++;
 		} else if (readable) {
 			pfds[nfds].fd     = obj->fd;
-#ifdef POLLRDHUP
-/* Available since Linux 2.6.17 */
 			pfds[nfds].events = POLLIN | POLLRDHUP;
-#else
-			pfds[nfds].events = POLLIN;
-#endif
 			map[nfds]         = obj;
 			nfds++;
 		} else if (writable) {
@@ -436,9 +427,8 @@ _poll_setup_pollfds(struct pollfd *pfds, eio_obj_t *map[], List l)
 	return nfds;
 }
 
-static void
-_poll_dispatch(struct pollfd *pfds, unsigned int nfds, eio_obj_t *map[],
-	       List objList)
+static void _poll_dispatch(struct pollfd *pfds, unsigned int nfds,
+			   eio_obj_t *map[], List objList)
 {
 	int i;
 
@@ -448,8 +438,7 @@ _poll_dispatch(struct pollfd *pfds, unsigned int nfds, eio_obj_t *map[],
 	}
 }
 
-static void
-_poll_handle_event(short revents, eio_obj_t *obj, List objList)
+static void _poll_handle_event(short revents, eio_obj_t *obj, List objList)
 {
 	bool read_called = false;
 	bool write_called = false;
@@ -512,8 +501,7 @@ _poll_handle_event(short revents, eio_obj_t *obj, List objList)
 	}
 }
 
-static struct io_operations *
-_ops_copy(struct io_operations *ops)
+static struct io_operations *_ops_copy(struct io_operations *ops)
 {
 	struct io_operations *ret = xmalloc(sizeof(*ops));
 
@@ -522,8 +510,7 @@ _ops_copy(struct io_operations *ops)
 	return ret;
 }
 
-eio_obj_t *
-eio_obj_create(int fd, struct io_operations *ops, void *arg)
+eio_obj_t *eio_obj_create(int fd, struct io_operations *ops, void *arg)
 {
 	eio_obj_t *obj = xmalloc(sizeof(*obj));
 	obj->fd  = fd;
@@ -549,7 +536,6 @@ void eio_obj_destroy(void *arg)
 		xfree(obj);
 	}
 }
-
 
 /*
  * Add an eio_obj_t "obj" to an eio_handle_t "eio"'s internal object list.
@@ -598,4 +584,3 @@ bool eio_remove_obj(eio_obj_t *obj, List objs)
 	list_iterator_destroy(i);
 	return ret;
 }
-

@@ -9,11 +9,11 @@
  *    Christopher J. Morrone <morrone2@llnl.gov>, et. al.
  *  CODE-OCEC-09-009. All rights reserved.
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -29,13 +29,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -52,6 +52,13 @@
 #include "src/common/env.h"
 #include "src/common/slurmdb_defs.h"
 #include "src/common/slurm_opt.h"
+
+enum wrappers {
+	WRPR_START,
+	WRPR_BSUB,
+	WRPR_PBS,
+	WRPR_CNT
+};
 
 typedef struct sbatch_env_opts {
 	uint32_t cpus_per_task;
@@ -71,7 +78,6 @@ extern slurm_opt_t opt;
 extern sbatch_opt_t sbopt;
 extern sbatch_env_t pack_env;
 extern int   error_exit;
-extern int   ignore_pbs;
 extern bool  is_pack_job;
 
 /*
@@ -110,7 +116,7 @@ extern void process_options_second_pass(int argc, char **argv, int *argc_off,
 					int script_size);
 
 /* external functions available for SPANK plugins to modify the environment
- * exported to the SLURM Prolog and Epilog programs */
+ * exported to the Slurm Prolog and Epilog programs */
 extern char *spank_get_job_env(const char *name);
 extern int   spank_set_job_env(const char *name, const char *value,
 			       int overwrite);
@@ -120,4 +126,12 @@ extern int   spank_unset_job_env(const char *name);
 extern void init_envs(sbatch_env_t *local_env);
 extern void set_envs(char ***array_ptr, sbatch_env_t *local_env,
 		     int pack_offset);
+
+extern char *get_argument(const char *file, int lineno, const char *line,
+			  int *skipped);
+extern char *next_line(const void *buf, int size, void **state);
+
+/* Translate #BSUB and #PBS directives in job script */
+extern bool xlate_batch_script(const char *file, const void *body,
+			       int size, int magic);
 #endif	/* _HAVE_OPT_H */

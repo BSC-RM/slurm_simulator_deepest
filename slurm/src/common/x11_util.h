@@ -5,11 +5,11 @@
  *  Copyright (C) 2017 SchedMD LLC.
  *  Written by Tim Wickberg <tim@schedmd.com>
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -25,13 +25,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -46,13 +46,17 @@
 
 /* convert a --x11 argument into flags */
 uint16_t x11_str2flags(const char *str);
+/* reverse the above */
+const char *x11_flags2str(uint16_t flags);
 
 /*
- * Get local TCP port for X11 from DISPLAY environment variable.
+ * Get local TCP port for X11 from DISPLAY environment variable, alongside an
+ * xmalloc()'d hostname in *target. If the port returned is 0, *target returns
+ * an xmalloc()'d string pointing to the local UNIX socket.
  *
  * Warning - will call exit(-1) if not able to retrieve.
  */
-extern int x11_get_display_port(void);
+extern void x11_get_display(uint16_t *port, char **target);
 
 /*
  * Retrieve the X11 magic cookie for the local DISPLAY

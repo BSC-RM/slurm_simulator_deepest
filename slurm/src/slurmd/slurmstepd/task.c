@@ -7,11 +7,11 @@
  *  Written by Mark A. Grondona <mgrondona@llnl.gov>.
  *  CODE-OCEC-09-009. All rights reserved.
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -27,13 +27,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -216,6 +216,8 @@ _run_script_and_set_env(const char *name, const char *path,
 	if (cpid == 0) {
 		char *argv[2];
 
+		setenvf(&job->env, "SLURM_SCRIPT_CONTEXT", "prolog_task");
+
 		argv[0] = xstrdup(path);
 		argv[1] = NULL;
 		if (dup2(pfd[1], 1) == -1)
@@ -318,16 +320,30 @@ _setup_mpi(stepd_step_rec_t *job, int ltaskid)
 {
 	mpi_plugin_task_info_t info[1];
 
-	info->jobid = job->jobid;
-	info->stepid = job->stepid;
-	info->nnodes = job->nnodes;
-	info->nodeid = job->nodeid;
-	info->ntasks = job->ntasks;
-	info->ltasks = job->node_tasks;
-	info->gtaskid = job->task[ltaskid]->gtid;
-	info->ltaskid = job->task[ltaskid]->id;
-	info->self = job->envtp->self;
-	info->client = job->envtp->cli;
+	if (job->pack_jobid && (job->pack_jobid != NO_VAL)) {
+		info->jobid   = job->pack_jobid;
+		info->stepid  = job->stepid;
+		info->nnodes  = job->pack_nnodes;
+		info->nodeid  = job->node_offset + job->nodeid;
+		info->ntasks  = job->pack_ntasks ;
+		info->ltasks  = job->node_tasks;
+		info->gtaskid = job->pack_task_offset +
+				job->task[ltaskid]->gtid;
+		info->ltaskid = job->task[ltaskid]->id;
+		info->self    = job->envtp->self;
+		info->client  = job->envtp->cli;
+	} else {
+		info->jobid   = job->jobid;
+		info->stepid  = job->stepid;
+		info->nnodes  = job->nnodes;
+		info->nodeid  = job->nodeid;
+		info->ntasks  = job->ntasks;
+		info->ltasks  = job->node_tasks;
+		info->gtaskid = job->task[ltaskid]->gtid;
+		info->ltaskid = job->task[ltaskid]->id;
+		info->self    = job->envtp->self;
+		info->client  = job->envtp->cli;
+	}
 
 	return mpi_hook_slurmstepd_task(info, &job->env);
 }
@@ -335,11 +351,11 @@ _setup_mpi(stepd_step_rec_t *job, int ltaskid)
 /*
  *  Current process is running as the user when this is called.
  */
-extern void exec_task(stepd_step_rec_t *job, int i)
+extern void exec_task(stepd_step_rec_t *job, int local_proc_id)
 {
 	uint32_t *gtids;		/* pointer to array of ranks */
 	int fd, j;
-	stepd_step_task_info_t *task = job->task[i];
+	stepd_step_task_info_t *task = job->task[local_proc_id];
 	char **tmp_env;
 	int saved_errno;
 	uint32_t node_offset = 0, task_offset = 0;
@@ -348,8 +364,6 @@ extern void exec_task(stepd_step_rec_t *job, int i)
 		node_offset = job->node_offset;
 	if (job->pack_task_offset != NO_VAL)
 		task_offset = job->pack_task_offset;
-	if (i == 0)
-		_make_tmpdir(job);
 
 	gtids = xmalloc(job->node_tasks * sizeof(uint32_t));
 	for (j = 0; j < job->node_tasks; j++)
@@ -376,7 +390,6 @@ extern void exec_task(stepd_step_rec_t *job, int i)
 	job->envtp->mem_bind = xstrdup(job->mem_bind);
 	job->envtp->mem_bind_type = job->mem_bind_type;
 	job->envtp->distribution = -1;
-	job->envtp->ckpt_dir = xstrdup(job->ckpt_dir);
 	job->envtp->batch_flag = job->batch;
 	job->envtp->uid = job->uid;
 	job->envtp->user_name = xstrdup(job->user_name);
@@ -390,6 +403,14 @@ extern void exec_task(stepd_step_rec_t *job, int i)
 	setup_env(job->envtp, false);
 	setenvf(&job->envtp->env, "SLURM_JOB_GID", "%d", job->gid);
 	setenvf(&job->envtp->env, "SLURMD_NODENAME", "%s", conf->node_name);
+	if (job->tres_bind) {
+		setenvf(&job->envtp->env, "SLURMD_TRES_BIND", "%s",
+			job->tres_bind);
+	}
+	if (job->tres_freq) {
+		setenvf(&job->envtp->env, "SLURMD_TRES_FREQ", "%s",
+			job->tres_freq);
+	}
 	tmp_env = job->env;
 	job->env = job->envtp->env;
 	env_array_free(tmp_env);
@@ -409,14 +430,15 @@ extern void exec_task(stepd_step_rec_t *job, int i)
 
 	if (!job->batch && (job->stepid != SLURM_EXTERN_CONT)) {
 		if (switch_g_job_attach(job->switch_job, &job->env,
-					job->nodeid, (uint32_t) i, job->nnodes,
-					job->ntasks, task->gtid) < 0) {
+					job->nodeid, (uint32_t) local_proc_id,
+					job->nnodes, job->ntasks,
+					task->gtid) < 0) {
 			error("Unable to attach to interconnect: %m");
 			log_fini();
 			exit(1);
 		}
 
-		if (_setup_mpi(job, i) != SLURM_SUCCESS) {
+		if (_setup_mpi(job, local_proc_id) != SLURM_SUCCESS) {
 			error("Unable to configure MPI plugin: %m");
 			log_fini();
 			exit(1);
@@ -430,19 +452,22 @@ extern void exec_task(stepd_step_rec_t *job, int i)
 		error("Failed to invoke task plugins: task_p_pre_launch error");
 		exit(1);
 	}
-	if (!job->batch && job->accel_bind_type) {
-		/* Modify copy of job's environment. Do not alter in place or
-		 * concurrent searches of the environment can generate invalid
-		 * memory references. */
+	if (!job->batch && (job->accel_bind_type || job->tres_bind)) {
+		/*
+		 * Modify copy of job's environment as needed for GRES. Do not
+		 * alter in place or concurrent searches of the environment can
+		 * generate invalid memory references.
+		 */
 		job->envtp->env = env_array_copy((const char **) job->env);
 		gres_plugin_step_set_env(&job->envtp->env, job->step_gres_list,
-					 job->accel_bind_type);
+					 job->accel_bind_type, job->tres_bind,
+					 job->tres_freq, local_proc_id);
 		tmp_env = job->env;
 		job->env = job->envtp->env;
 		env_array_free(tmp_env);
 	}
 
-	if (spank_user_task(job, i) < 0) {
+	if (spank_user_task(job, local_proc_id) < 0) {
 		error("Failed to invoke spank plugin stack");
 		exit(1);
 	}
@@ -460,6 +485,13 @@ extern void exec_task(stepd_step_rec_t *job, int i)
 		_run_script_and_set_env("user task_prolog",
 					job->task_prolog, job);
 	}
+
+	/*
+	 * Set TMPDIR after running prolog scripts, since TMPDIR
+	 * might be set or changed in one of the prolog scripts.
+	 */
+	if (local_proc_id == 0)
+		_make_tmpdir(job);
 
 	if (!job->batch)
 		pdebug_stop_current(job);

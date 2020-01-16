@@ -5,11 +5,11 @@
  *  Copyright (C) 2015      Mellanox Technologies. All rights reserved.
  *  Written by Artem Polyakov <artpol84@gmail.com, artemp@mellanox.com>.
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -25,13 +25,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
  \*****************************************************************************/
 
@@ -40,14 +40,32 @@
 
 #include "pmixp_common.h"
 
-#define PMIXP_ALLOC_KEY(kvp, key_str)				\
+#ifdef PMIX_VALUE_LOAD
+#define PMIXP_VALUE_LOAD PMIX_VALUE_LOAD
+#else
+#define PMIXP_VALUE_LOAD pmix_value_load
+#endif
+
+#define PMIXP_KVP_ALLOC(kvp, key_str)				\
 {								\
 	char *key = key_str;					\
 	kvp = (pmix_info_t *)xmalloc(sizeof(pmix_info_t));	\
 	(void)strncpy(kvp->key, key, PMIX_MAX_KEYLEN);		\
 }
 
-#define PMIXP_INFO_ADD(kvp, key_str, field, val) {			\
+#define PMIXP_KVP_CREATE(kvp, key_str, val, type)		\
+{								\
+	PMIXP_KVP_ALLOC(kvp, key_str);				\
+	PMIX_INFO_LOAD(kvp, key_str, val, type);		\
+}
+
+
+#define PMIXP_KVP_LOAD(kvp, val, type)				\
+{								\
+	PMIX_INFO_LOAD(kvp, NULL, val, type);			\
+}
+
+#define PMIXP_KVP_ADD(kvp, key_str, val, type) {			\
 	int key_num = 0;						\
 	char *key = key_str;						\
 	if (!kvp) {							\
@@ -58,7 +76,7 @@
 					      sizeof(pmix_info_t));	\
 	}								\
 	(void)strncpy(kvp[key_num].key, key, PMIX_MAX_KEYLEN);		\
-	PMIX_VAL_SET(&kvp[key_num].value, field, val);			\
+	PMIXP_VALUE_LOAD(&kvp[key_num].value, val, type);		\
 }
 
 #define PMIXP_INFO_SIZE(kvp) (xsize(kvp) / sizeof(pmix_info_t))
@@ -86,5 +104,8 @@ int pmixp_lib_is_wildcard(uint32_t rank);
 int pmixp_lib_is_undef(uint32_t rank);
 uint32_t pmixp_lib_get_wildcard(void);
 uint32_t pmixp_lib_get_version(void);
+int pmixp_lib_fence(const pmixp_proc_t procs[], size_t nprocs,
+		    bool collect, char *data, size_t ndata,
+		    void *cbfunc, void *cbdata);
 
 #endif /* PMIXP_CLIENT_H */

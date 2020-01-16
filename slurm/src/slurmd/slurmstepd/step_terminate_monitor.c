@@ -7,22 +7,22 @@
  *  Written by Christopher J. Morrone <morrone2@llnl.gov>
  *  CODE-OCEC-09-009. All rights reserved.
  *  
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *  
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
  *  
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *  
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -152,6 +152,23 @@ static void *_monitor(void *arg)
 			rc = ESLURMD_KILL_TASK_FAILED;
 		}
 
+		stepd_drain_node(slurm_strerror(rc));
+
+		if (!job->batch) {
+			/* Notify waiting sruns */
+			if (job->stepid != SLURM_EXTERN_CONT)
+				while (stepd_send_pending_exit_msgs(job)) {;}
+
+			if ((step_complete.rank > -1)) {
+				if (job->aborted)
+					info("unkillable stepd exiting with aborted job");
+				else
+					stepd_wait_for_children_slurmstepd(job);
+			}
+			/* Notify parent stepd or ctld directly */
+			stepd_send_step_complete_msgs(job);
+		}
+
 	        exit(stepd_cleanup(NULL, job, NULL, NULL, rc, 0));
 	} else if (rc != 0) {
 		error("Error waiting on condition in _monitor: %m");
@@ -193,15 +210,15 @@ static int _call_external_program(stepd_step_rec_t *job)
 		char *argv[2];
 		char buf[16];
 
-		/* container_g_add_pid needs to be called in the
+		/* container_g_join needs to be called in the
 		   forked process part of the fork to avoid a race
 		   condition where if this process makes a file or
 		   detacts itself from a child before we add the pid
 		   to the container in the parent of the fork.
 		*/
-		if (container_g_add_pid(recorded_jobid, getpid(), getuid())
+		if (container_g_join(recorded_jobid, getuid())
 		    != SLURM_SUCCESS)
-			error("container_g_add_pid(%u): %m", recorded_jobid);
+			error("container_g_join(%u): %m", recorded_jobid);
 
 		snprintf(buf, 16, "%u", recorded_jobid);
 		setenv("SLURM_JOBID", buf, 1);
@@ -246,4 +263,3 @@ static int _call_external_program(stepd_step_rec_t *job)
 
 	/* NOTREACHED */
 }
-

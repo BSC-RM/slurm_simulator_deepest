@@ -5,11 +5,11 @@
  *  Copyright (C) 2015 SchedMD LLC.
  *  Written by David Bigagli <david@schedmd.com>
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -25,13 +25,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -175,7 +175,6 @@ int sacctmgr_list_reservation(int argc, char **argv)
                 start_tm.tm_min = 0;
                 start_tm.tm_hour = 0;
                 start_tm.tm_mday--;
-                start_tm.tm_isdst = -1;
                 reservation_cond->time_start = slurm_mktime(&start_tm);
         }
 
@@ -249,19 +248,20 @@ int sacctmgr_list_reservation(int argc, char **argv)
 	/* For each reservation prints the data structure members
 	 */
         while ((reservation = list_next(itr))) {
+		int curr_inx = 1;
 		while ((field = list_next(itr2))) {
 			switch (field->type) {
 			case PRINT_ASSOC_NAME:
 				field->print_routine(
 					field,
 					reservation->assocs,
-					field_count);
+					(curr_inx == field_count));
 				break;
 			case PRINT_CLUSTER:
 				field->print_routine(
 					field,
 					reservation->cluster,
-					field_count);
+					(curr_inx == field_count));
 				break;
 			case PRINT_FLAGS:
 				tmp_char = reservation_flags_string(
@@ -269,61 +269,63 @@ int sacctmgr_list_reservation(int argc, char **argv)
 				field->print_routine(
 					field,
 					tmp_char,
-					field_count);
+					(curr_inx == field_count));
 				xfree(tmp_char);
 				break;
 			case PRINT_ID:
 				field->print_routine(field,
 						     reservation->id,
-						     field_count);
+						     (curr_inx == field_count));
 				break;
 			case PRINT_NAME:
 				field->print_routine(field,
 						     reservation->name,
-						     field_count);
+						     (curr_inx == field_count));
 				break;
 			case PRINT_NODENAME:
 				field->print_routine(
 					field,
 					reservation->nodes,
-					field_count);
+					(curr_inx == field_count));
 				break;
 			case PRINT_NODEINX:
 				field->print_routine(
 					field,
 					reservation->node_inx,
-					field_count);
+					(curr_inx == field_count));
 				break;
 			case PRINT_TIMEEND:
 				field->print_routine(
 					field,
 					reservation->time_end,
-					field_count);
+					(curr_inx == field_count));
 				break;
 			case PRINT_TIMESTART:
 				field->print_routine(
 					field,
 					reservation->time_start,
-					field_count);
+					(curr_inx == field_count));
 				break;
 			case PRINT_TRES:
 				sacctmgr_initialize_g_tres_list();
 
 				tmp_char = slurmdb_make_tres_string_from_simple(
 					reservation->tres_str, g_tres_list,
-					NO_VAL, CONVERT_NUM_UNIT_EXACT);
+					NO_VAL, CONVERT_NUM_UNIT_EXACT,
+					0, NULL);
 				field->print_routine(field,
 						     tmp_char,
-						     field_count);
+						     (curr_inx == field_count));
 				xfree(tmp_char);
 				break;
 			case PRINT_UNUSED:
 				field->print_routine(
 					field,
 					reservation->unused_wall,
-					field_count);
+					(curr_inx == field_count));
 				break;
 			}
+			curr_inx++;
 		}
 		list_iterator_reset(itr2);
 		printf("\n");

@@ -9,11 +9,11 @@
  *  Written by Jim Garlick <garlick@llnl.gov>, Morris Jette <jette1@llnl.gov>
  *  CODE-OCEC-09-009. All rights reserved.
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -29,13 +29,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -90,9 +90,9 @@
 } while (0)
 
 
-/* Ensure valid bitmap size, prevent overflow in buffer size calcuation */
+/* Ensure valid bitmap size, prevent overflow in buffer size calculation */
 #define _assert_valid_size(bit) do {	\
-	assert((bit) >= 0);		\
+	assert((bit) > 0);		\
 	assert((bit) <= 0x40000000); 	\
 } while (0)
 
@@ -495,7 +495,10 @@ bit_ffs(bitstr_t *b)
 		}
 #endif
 	}
-	return value;
+	if (value < _bitstr_bits(b))
+		return value;
+	else
+		return -1;
 }
 
 /*
@@ -516,7 +519,7 @@ bit_fls(bitstr_t *b)
 
 	bit = _bitstr_bits(b) - 1;	/* zero origin */
 
-	while (bit >= 0 && 		/* test partitial words */
+	while (bit >= 0 && 		/* test partial words */
 		(_bit_word(bit) == _bit_word(bit + 1))) {
 		if (bit_test(b, bit)) {
 			value = bit;
@@ -681,7 +684,22 @@ bit_or(bitstr_t *b1, bitstr_t *b2)
 		b1[_bit_word(bit)] |= b2[_bit_word(bit)];
 }
 
+/*
+ * b1 |= ~b2
+ * b1 (IN/OUT)
+ * b2 (IN)
+ */
+void bit_or_not(bitstr_t *b1, bitstr_t *b2)
+{
+	bitoff_t bit;
 
+	_assert_bitstr_valid(b1);
+	_assert_bitstr_valid(b2);
+	assert(_bitstr_bits(b1) == _bitstr_bits(b2));
+
+	for (bit = 0; bit < _bitstr_bits(b1); bit += sizeof(bitstr_t)*8)
+		b1[_bit_word(bit)] |= ~b2[_bit_word(bit)];
+}
 
 /*
  * return a copy of the supplied bitmap
@@ -1010,7 +1028,7 @@ bit_pick_cnt(bitstr_t *b, bitoff_t nbits)
  */
 char *bit_fmt(char *str, int32_t len, bitstr_t *b)
 {
-	int32_t count = 0, ret, word;
+	int32_t count = 0, ret, size, word;
 	bitoff_t start, bit;
 
 	_assert_bitstr_valid(b);
@@ -1030,15 +1048,15 @@ char *bit_fmt(char *str, int32_t len, bitstr_t *b)
 				bit++;
 				count++;
 			}
-			if (bit == start)	/* add single bit position */
-				ret = snprintf(str+strlen(str),
-				               len-strlen(str),
+			size = strlen(str);
+			if (bit == start) {	/* add single bit position */
+				ret = snprintf(str + size, len - size,
 				               "%"BITSTR_FMT",", start);
-			else 			/* add bit position range */
-				ret = snprintf(str+strlen(str),
-				               len-strlen(str),
+			} else { 		/* add bit position range */
+				ret = snprintf(str + size, len - size,
 				               "%"BITSTR_FMT"-%"BITSTR_FMT",",
 					       start, bit);
+			}
 			assert(ret != -1);
 		}
 		bit++;
@@ -1223,7 +1241,7 @@ int32_t *bitfmt2int(char *bit_str_ptr)
 }
 
 /*
- * intbitfmt - convert a array of interger (start/end) pairs
+ * intbitfmt - convert a array of integer (start/end) pairs
  *	terminated by -1 (e.g. "0, 30, 45, 45, 50, 60, -1") to a
  *	string describing bitmap (output from bit_fmt, e.g. "0-30,45,50-60")
  * input: int array
@@ -1252,16 +1270,18 @@ inx2bitfmt (int32_t *inx)
 
 int inx2bitstr(bitstr_t *b, int32_t *inx)
 {
-	int32_t *p;
+	int32_t *p, bit_cnt;
 	int rc = 0;
 
 	assert(b);
 	assert(inx);
 
-	bit_nclear(b, 0, _bitstr_bits(b) - 1);
+	bit_cnt = _bitstr_bits(b);
+	if (bit_cnt > 0)
+		bit_nclear(b, 0, bit_cnt - 1);
 	for (p = inx; *p != -1; p += 2) {
-		if ((*p < 0) || (*p >= _bitstr_bits(b))
-		    ||  (*(p + 1) < 0) || (*(p + 1) >= _bitstr_bits(b))) {
+		if ((*p < 0) || (*p >= bit_cnt) ||
+		    (*(p + 1) < 0) || (*(p + 1) >= bit_cnt)) {
 			rc = -1;
 			break;
 		}

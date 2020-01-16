@@ -13,11 +13,11 @@
  *  Written by Danny Auble <da@llnl.gov>
  *  CODE-OCEC-09-009. All rights reserved.
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -33,13 +33,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -50,6 +50,7 @@
 #endif
 
 #include <fcntl.h>
+#include <float.h>
 #include <limits.h>
 #include <math.h>
 #include <pthread.h>
@@ -59,7 +60,9 @@
 #include "slurm/slurm_errno.h"
 
 #include "src/common/parse_time.h"
+#include "src/common/site_factor.h"
 #include "src/common/slurm_mcs.h"
+#include "src/common/slurm_priority.h"
 #include "src/common/slurm_time.h"
 #include "src/common/xstring.h"
 #include "src/common/gres.h"
@@ -77,26 +80,22 @@
  * overwritten when linking with the slurmctld.
  */
 #if defined (__APPLE__)
-void *acct_db_conn  __attribute__((weak_import)) = NULL;
-uint32_t cluster_cpus __attribute__((weak_import)) = NO_VAL;
-List job_list  __attribute__((weak_import)) = NULL;
-time_t last_job_update __attribute__((weak_import)) = (time_t) 0;
-uint16_t part_max_priority __attribute__((weak_import)) = 0;
-slurm_ctl_conf_t slurmctld_conf __attribute__((weak_import));
-int slurmctld_tres_cnt __attribute__((weak_import)) = 0;
-int accounting_enforce __attribute__((weak_import)) = 0;
+extern void *acct_db_conn  __attribute__((weak_import));
+extern uint32_t cluster_cpus __attribute__((weak_import));
+extern List job_list  __attribute__((weak_import));
+extern time_t last_job_update __attribute__((weak_import));
+extern slurm_ctl_conf_t slurmctld_conf __attribute__((weak_import));
+extern int slurmctld_tres_cnt __attribute__((weak_import));
+extern int accounting_enforce __attribute__((weak_import));
 #else
 void *acct_db_conn = NULL;
 uint32_t cluster_cpus = NO_VAL;
 List job_list = NULL;
 time_t last_job_update = (time_t) 0;
-uint16_t part_max_priority = 0;
 slurm_ctl_conf_t slurmctld_conf;
 int slurmctld_tres_cnt = 0;
 int accounting_enforce = 0;
 #endif
-
-static void _my_sleep_prio(int secs);
 
 /*
  * These variables are required by the generic plugin interface.  If they
@@ -109,14 +108,14 @@ static void _my_sleep_prio(int secs);
  * plugin_type - a string suggesting the type of the plugin or its
  * applicability to a particular form of data or method of data handling.
  * If the low-level plugin API is used, the contents of this string are
- * unimportant and may be anything.  SLURM uses the higher-level plugin
+ * unimportant and may be anything.  Slurm uses the higher-level plugin
  * interface which requires this string to be of the form
  *
  *	<application>/<method>
  *
  * where <application> is a description of the intended application of
- * the plugin (e.g., "jobcomp" for SLURM job completion logging) and <method>
- * is a description of how this plugin satisfies that application.  SLURM will
+ * the plugin (e.g., "jobcomp" for Slurm job completion logging) and <method>
+ * is a description of how this plugin satisfies that application.  Slurm will
  * only load job completion logging plugins if the plugin_type string has a
  * prefix of "jobcomp/".
  *
@@ -128,17 +127,19 @@ const char plugin_type[]	= "priority/multifactor";
 const uint32_t plugin_version	= SLURM_VERSION_NUMBER;
 
 static pthread_t decay_handler_thread;
-static pthread_t cleanup_handler_thread;
 static pthread_mutex_t decay_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t decay_cond = PTHREAD_COND_INITIALIZER;
 static pthread_mutex_t decay_init_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t decay_init_cond = PTHREAD_COND_INITIALIZER;
 static bool running_decay = 0, reconfig = 0, calc_fairshare = 1;
+static time_t plugin_shutdown = 0;
 static bool favor_small; /* favor small jobs over large */
 static uint16_t damp_factor = 1;  /* weight for age factor */
 static uint32_t max_age; /* time when not to add any more
 			  * priority to a job if reached */
 static uint16_t enforce;     /* AccountingStorageEnforce */
 static uint32_t weight_age;  /* weight for age factor */
+static uint32_t weight_assoc;/* weight for assoc factor */
 static uint32_t weight_fs;   /* weight for Fairshare factor */
 static uint32_t weight_js;   /* weight for Job Size factor */
 static uint32_t weight_part; /* weight for Partition factor */
@@ -150,7 +151,7 @@ static uint32_t prevflags;    /* Priority Flags before _internal_setup() resets
 static time_t g_last_ran = 0; /* when the last poll ran */
 static double decay_factor = 1; /* The decay factor when decaying time. */
 
-/* variables defined in prirority_multifactor.h */
+/* variables defined in priority_multifactor.h */
 bool priority_debug = 0;
 
 static void _priority_p_set_assoc_usage_debug(slurmdb_assoc_rec_t *assoc);
@@ -260,10 +261,7 @@ static int _reset_usage(void)
 
 static void _read_last_decay_ran(time_t *last_ran, time_t *last_reset)
 {
-	int data_allocated, data_read = 0;
-	uint32_t data_size = 0;
-	int state_fd;
-	char *data = NULL, *state_file;
+	char *state_file;
 	Buf buffer;
 
 	xassert(last_ran);
@@ -276,37 +274,16 @@ static void _read_last_decay_ran(time_t *last_ran, time_t *last_reset)
 	state_file = xstrdup(slurmctld_conf.state_save_location);
 	xstrcat(state_file, "/priority_last_decay_ran");
 	lock_state_files();
-	state_fd = open(state_file, O_RDONLY);
-	if (state_fd < 0) {
+
+	if (!(buffer = create_mmap_buf(state_file))) {
 		info("No last decay (%s) to recover", state_file);
+		xfree(state_file);
 		unlock_state_files();
 		return;
-	} else {
-		data_allocated = BUF_SIZE;
-		data = xmalloc(data_allocated);
-		while (1) {
-			data_read = read(state_fd, &data[data_size],
-					 BUF_SIZE);
-			if (data_read < 0) {
-				if (errno == EINTR)
-					continue;
-				else {
-					error("Read error on %s: %m",
-					      state_file);
-					break;
-				}
-			} else if (data_read == 0)	/* eof */
-				break;
-			data_size      += data_read;
-			data_allocated += data_read;
-			xrealloc(data, data_allocated);
-		}
-		close(state_fd);
 	}
 	xfree(state_file);
 	unlock_state_files();
 
-	buffer = create_buf(data, data_size);
 	safe_unpack_time(last_ran, buffer);
 	safe_unpack_time(last_reset, buffer);
 	free_buf(buffer);
@@ -469,8 +446,7 @@ static double _get_fairshare_priority(struct job_record *job_ptr)
 	if (flags & PRIORITY_FLAGS_FAIR_TREE) {
 		priority_fs = job_assoc->usage->fs_factor;
 		if (priority_debug) {
-			info("Fairhare priority of job %u for user %s in acct"
-			     " %s is %f",
+			info("Fairshare priority of job %u for user %s in acct %s is %f",
 			     job_ptr->job_id, job_assoc->user, job_assoc->acct,
 			     priority_fs);
 		}
@@ -491,6 +467,51 @@ static double _get_fairshare_priority(struct job_record *job_ptr)
 	return priority_fs;
 }
 
+static void _get_tres_factors(struct job_record *job_ptr,
+			      struct part_record *part_ptr,
+			      double *tres_factors)
+{
+	int i;
+
+	xassert(tres_factors);
+
+	/* can't memcpy because of different types
+	 * uint64_t vs. double */
+	for (i = 0; i < slurmctld_tres_cnt; i++) {
+		uint64_t value = 0;
+		if (job_ptr->tres_alloc_cnt)
+			value = job_ptr->tres_alloc_cnt[i];
+		else if (job_ptr->tres_req_cnt)
+			value = job_ptr->tres_req_cnt[i];
+
+		if (flags & PRIORITY_FLAGS_NO_NORMAL_TRES)
+			tres_factors[i] = value;
+		else if (value &&
+			 part_ptr &&
+			 part_ptr->tres_cnt &&
+			 part_ptr->tres_cnt[i])
+			tres_factors[i] = value /
+				(double)part_ptr->tres_cnt[i];
+	}
+}
+
+static double _get_tres_prio_weighted(double *tres_factors)
+{
+	int i;
+	double tmp_tres = 0.0;
+
+	xassert(tres_factors);
+
+	if (!weight_tres)
+		return tmp_tres;
+
+	for (i = 0; i < slurmctld_tres_cnt; i++) {
+		tres_factors[i] *= weight_tres[i];
+		tmp_tres += tres_factors[i];
+	}
+
+	return tmp_tres;
+}
 
 /* Returns the priority after applying the weight factors */
 static uint32_t _get_priority_internal(time_t start_time,
@@ -500,6 +521,7 @@ static uint32_t _get_priority_internal(time_t start_time,
 	priority_factors_object_t pre_factors;
 	uint64_t tmp_64;
 	double tmp_tres = 0.0;
+	char *multi_part_str = NULL;
 
 	if (job_ptr->direct_set_prio && (job_ptr->priority > 0)) {
 		if (job_ptr->prio_factors) {
@@ -530,8 +552,8 @@ static uint32_t _get_priority_internal(time_t start_time,
 		memcpy(&pre_factors, job_ptr->prio_factors,
 		       sizeof(priority_factors_object_t));
 		if (job_ptr->prio_factors->priority_tres) {
-			pre_factors.priority_tres = xmalloc(sizeof(double) *
-							    slurmctld_tres_cnt);
+			pre_factors.priority_tres = xcalloc(slurmctld_tres_cnt,
+							    sizeof(double));
 			memcpy(pre_factors.priority_tres,
 			       job_ptr->prio_factors->priority_tres,
 			       sizeof(double) * slurmctld_tres_cnt);
@@ -540,28 +562,27 @@ static uint32_t _get_priority_internal(time_t start_time,
 		memset(&pre_factors, 0, sizeof(priority_factors_object_t));
 
 	job_ptr->prio_factors->priority_age  *= (double)weight_age;
+	job_ptr->prio_factors->priority_assoc *= (double)weight_assoc;
 	job_ptr->prio_factors->priority_fs   *= (double)weight_fs;
 	job_ptr->prio_factors->priority_js   *= (double)weight_js;
 	job_ptr->prio_factors->priority_part *= (double)weight_part;
 	job_ptr->prio_factors->priority_qos  *= (double)weight_qos;
 
 	if (weight_tres && job_ptr->prio_factors->priority_tres) {
-		int i;
 		double *tres_factors = NULL;
 		tres_factors = job_ptr->prio_factors->priority_tres;
-
-		for (i = 0; i < slurmctld_tres_cnt; i++) {
-			tres_factors[i] *= weight_tres[i];
-			tmp_tres += tres_factors[i];
-		}
+		tmp_tres = _get_tres_prio_weighted(tres_factors);
 	}
 
 	priority = job_ptr->prio_factors->priority_age
+		+ job_ptr->prio_factors->priority_assoc
 		+ job_ptr->prio_factors->priority_fs
 		+ job_ptr->prio_factors->priority_js
 		+ job_ptr->prio_factors->priority_part
 		+ job_ptr->prio_factors->priority_qos
 		+ tmp_tres
+		+ (double)(((int64_t)job_ptr->prio_factors->priority_site)
+			   - NICE_OFFSET)
 		- (double)(((int64_t)job_ptr->prio_factors->nice)
 			   - NICE_OFFSET);
 
@@ -584,24 +605,43 @@ static uint32_t _get_priority_internal(time_t start_time,
 
 		if (!job_ptr->priority_array) {
 			i = list_count(job_ptr->part_ptr_list) + 1;
-			job_ptr->priority_array = xmalloc(sizeof(uint32_t) * i);
+			job_ptr->priority_array = xcalloc(i, sizeof(uint32_t));
 		}
 
 		i = 0;
+		list_sort(job_ptr->part_ptr_list, priority_sort_part_tier);
 		part_iterator = list_iterator_create(job_ptr->part_ptr_list);
 		while ((part_ptr = (struct part_record *)
 			list_next(part_iterator))) {
-			priority_part = part_ptr->priority_job_factor /
-				(double)part_max_priority *
+			double part_tres = 0.0;
+
+			if (weight_tres) {
+				double part_tres_factors[slurmctld_tres_cnt];
+				memset(part_tres_factors, 0,
+				       sizeof(double) * slurmctld_tres_cnt);
+				_get_tres_factors(job_ptr, part_ptr,
+						  part_tres_factors);
+				part_tres = _get_tres_prio_weighted(
+							part_tres_factors);
+			}
+
+			priority_part =
+				((flags & PRIORITY_FLAGS_NO_NORMAL_PART) ?
+				 part_ptr->priority_job_factor :
+				 part_ptr->norm_priority) *
 				(double)weight_part;
 			priority_part +=
 				 (job_ptr->prio_factors->priority_age
+				 + job_ptr->prio_factors->priority_assoc
 				 + job_ptr->prio_factors->priority_fs
 				 + job_ptr->prio_factors->priority_js
 				 + job_ptr->prio_factors->priority_qos
-				 + tmp_tres
+				 + part_tres
+				 + (double)
+				   (((int64_t)job_ptr->prio_factors->priority_site)
+				    - NICE_OFFSET)
 				 - (double)
-				   (((uint64_t)job_ptr->prio_factors->nice)
+				   (((int64_t)job_ptr->prio_factors->nice)
 				    - NICE_OFFSET));
 
 			/* Priority 0 is reserved for held jobs */
@@ -621,11 +661,17 @@ static uint32_t _get_priority_internal(time_t start_time,
 				job_ptr->priority_array[i] =
 					(uint32_t) priority_part;
 			}
-			debug("Job %u has more than one partition (%s)(%u)",
-			      job_ptr->job_id, part_ptr->name,
-			      job_ptr->priority_array[i]);
+			if (priority_debug) {
+				xstrfmtcat(multi_part_str, multi_part_str ?
+					   ", %s=%u" : "%s=%u", part_ptr->name,
+					   job_ptr->priority_array[i]);
+			}
 			i++;
 		}
+		if (priority_debug && multi_part_str)
+			info("%pJ multi-partition priorities: %s",
+			     job_ptr, multi_part_str);
+		xfree(multi_part_str);
 		list_iterator_destroy(part_iterator);
 	}
 
@@ -636,10 +682,16 @@ static uint32_t _get_priority_internal(time_t start_time,
 		double *pre_tres_factors = pre_factors.priority_tres;
 		assoc_mgr_lock_t locks = { NO_LOCK, NO_LOCK, NO_LOCK, NO_LOCK,
 					   READ_LOCK, NO_LOCK, NO_LOCK };
+		int64_t priority_site =
+			(((int64_t)job_ptr->prio_factors->priority_site) -
+			 NICE_OFFSET);
 
 		info("Weighted Age priority is %f * %u = %.2f",
 		     pre_factors.priority_age, weight_age,
 		     job_ptr->prio_factors->priority_age);
+		info("Weighted Assoc priority is %f * %u = %.2f",
+		     pre_factors.priority_assoc, weight_assoc,
+		     job_ptr->prio_factors->priority_assoc);
 		info("Weighted Fairshare priority is %f * %u = %.2f",
 		     pre_factors.priority_fs, weight_fs,
 		     job_ptr->prio_factors->priority_fs);
@@ -652,6 +704,7 @@ static uint32_t _get_priority_internal(time_t start_time,
 		info("Weighted QOS priority is %f * %u = %.2f",
 		     pre_factors.priority_qos, weight_qos,
 		     job_ptr->prio_factors->priority_qos);
+		info("Site priority is %"PRId64, priority_site);
 
 		if (weight_tres && pre_tres_factors && post_tres_factors) {
 			assoc_mgr_lock(&locks);
@@ -666,9 +719,11 @@ static uint32_t _get_priority_internal(time_t start_time,
 			assoc_mgr_unlock(&locks);
 		}
 
-		info("Job %u priority: %.2f + %.2f + %.2f + %.2f + %.2f + %2.f "
-		     "- %"PRId64" = %.2f",
-		     job_ptr->job_id, job_ptr->prio_factors->priority_age,
+		info("Job %u priority: %"PRId64" + %2.f + %.2f + %.2f + %.2f + %.2f + %.2f + %2.f - %"PRId64" = %.2f",
+		     job_ptr->job_id,
+		     priority_site,
+		     job_ptr->prio_factors->priority_age,
+		     job_ptr->prio_factors->priority_assoc,
 		     job_ptr->prio_factors->priority_fs,
 		     job_ptr->prio_factors->priority_js,
 		     job_ptr->prio_factors->priority_part,
@@ -697,7 +752,6 @@ static time_t _next_reset(uint16_t reset_period, time_t last_reset)
 	last_tm.tm_hour  = 0;
 /*	last_tm.tm_wday = 0	ignored */
 /*	last_tm.tm_yday = 0;	ignored */
-	last_tm.tm_isdst = -1;
 	switch (reset_period) {
 	case PRIORITY_RESET_DAILY:
 		tmp_time = slurm_mktime(&last_tm);
@@ -886,6 +940,7 @@ static void _init_grp_used_cpu_run_secs(time_t last_ran)
 
 	assoc_mgr_lock(&locks);
 	while ((job_ptr = list_next(itr))) {
+		double usage_factor = 1.0;
 		if (priority_debug)
 			debug2("job: %u", job_ptr->job_id);
 
@@ -901,10 +956,15 @@ static void _init_grp_used_cpu_run_secs(time_t last_ran)
 		if (job_ptr->start_time > last_ran)
 			continue;
 
+		/* apply usage factor */
+		if (job_ptr->qos_ptr &&
+		    (job_ptr->qos_ptr->usage_factor >= 0))
+			usage_factor = job_ptr->qos_ptr->usage_factor;
+		usage_factor *= (double)(last_ran - job_ptr->start_time);
+
 		for (i=0; i<slurmctld_tres_cnt; i++) {
 			tres_run_delta[i] =
-				(uint64_t)(last_ran - job_ptr->start_time) *
-				job_ptr->tres_alloc_cnt[i];
+				job_ptr->tres_alloc_cnt[i] * usage_factor;
 		}
 
 		_handle_tres_run_secs(tres_run_delta, job_ptr);
@@ -1036,6 +1096,8 @@ static int _apply_new_usage(struct job_record *job_ptr,
 		run_decay  *= qos->usage_factor;
 		real_nodecay *= qos->usage_factor;
 		run_nodecay  *= qos->usage_factor;
+
+		tres_time_delta *= qos->usage_factor;
 	}
 	if (job_ptr->tres_alloc_cnt) {
 		for (i=0; i<slurmctld_tres_cnt; i++) {
@@ -1155,7 +1217,8 @@ static void *_decay_thread(void *no_data)
 
 	time_t now;
 	double run_delta = 0.0, real_decay = 0.0;
-	double elapsed;
+	struct timeval tvnow;
+	struct timespec abs;
 
 	/* Write lock on jobs, read lock on nodes and partitions */
 	slurmctld_lock_t job_write_lock =
@@ -1207,8 +1270,10 @@ static void *_decay_thread(void *no_data)
 	if (decay_hl > 0)
 		decay_factor = 1 - (0.693 / decay_hl);
 
-	(void) pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
-	(void) pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
+	/* setup timer */
+	gettimeofday(&tvnow, NULL);
+	abs.tv_sec = tvnow.tv_sec;
+	abs.tv_nsec = tvnow.tv_usec * 1000;
 
 	_read_last_decay_ran(&g_last_ran, &last_reset);
 	if (last_reset == 0)
@@ -1219,7 +1284,7 @@ static void *_decay_thread(void *no_data)
 
 	_init_grp_used_cpu_run_secs(g_last_ran);
 
-	while (1) {
+	while (!plugin_shutdown) {
 		now = start_time;
 
 		slurm_mutex_lock(&decay_lock);
@@ -1290,10 +1355,10 @@ static void *_decay_thread(void *no_data)
 		if (run_delta <= 0)
 			goto get_usage;
 		real_decay = pow(decay_factor, (double)run_delta);
-#ifdef DBL_MIN
+
 		if (real_decay < DBL_MIN)
 			real_decay = DBL_MIN;
-#endif
+
 		if (priority_debug)
 			info("Decay factor over %g seconds goes "
 			     "from %.15f -> %.15f",
@@ -1307,15 +1372,23 @@ static void *_decay_thread(void *no_data)
 			break;
 		}
 
+		lock_slurmctld(job_write_lock);
+
+		/*
+		 * Give the site_factor plugin a chance to update the
+		 * site_factor value if desired.
+		 */
+		site_factor_g_update();
+
 		if (!(flags & PRIORITY_FLAGS_FAIR_TREE)) {
-			lock_slurmctld(job_write_lock);
 			list_for_each(
 				job_list,
 				(ListForF) _decay_apply_new_usage_and_weighted_factors,
 				&start_time
 				);
-			unlock_slurmctld(job_write_lock);
 		}
+
+		unlock_slurmctld(job_write_lock);
 
 	get_usage:
 		if (flags & PRIORITY_FLAGS_FAIR_TREE)
@@ -1326,37 +1399,16 @@ static void *_decay_thread(void *no_data)
 		_write_last_decay_ran(g_last_ran, last_reset);
 
 		running_decay = 0;
-		slurm_mutex_unlock(&decay_lock);
 
 		/* Sleep until the next time. */
-		now = time(NULL);
-		elapsed = difftime(now, start_time);
-		if (elapsed < calc_period) {
-			_my_sleep_prio(calc_period - elapsed);
-			start_time = time(NULL);
-		} else
-			start_time = now;
+		abs.tv_sec += calc_period;
+		slurm_cond_timedwait(&decay_cond, &decay_lock, &abs);
+		slurm_mutex_unlock(&decay_lock);
+
+		start_time = time(NULL);
 		/* repeat ;) */
 	}
 	return NULL;
-}
-
-static void _my_sleep_prio(int secs)
-{
-#ifndef SLURM_SIMULATOR
-        sleep(secs);
-#else
-        /* Since the backfill and time controling loops are synced, we cannot make
-         * the sleep depend on "faked time", because it does not change while the
-         * backfilling is running... and _my_sleep is called form in there.
-         */
-        if (secs==0)
-                return;
-        time_t target_time=time(NULL)+secs;
-        while (time(NULL)<target_time)
-                usleep(10);
-
-#endif
 }
 
 /* If the specified job record satisfies the filter specifications in req_msg
@@ -1406,8 +1458,17 @@ static void _filter_job(struct job_record *job_ptr,
 			return;
 	}
 
+	/*
+	 * Job is not in any partition, so there is nothing to return.
+	 * This can happen if the Partition was deleted, CALCULATE_RUNNING
+	 * is enabled, and this job is still waiting out MinJobAge before
+	 * being removed from the system.
+	 */
+	if (!job_ptr->part_ptr && !job_ptr->part_ptr_list)
+		return;
+
 	/* Filter by partition, job in one partition */
-	if (!job_ptr->part_ptr_list || !job_ptr->priority_array) {
+	if (!job_ptr->part_ptr_list) {
 		job_part_ptr =  job_ptr->part_ptr;
 		filter = 0;
 		if (part_ptr_list) {
@@ -1455,23 +1516,26 @@ static void _filter_job(struct job_record *job_ptr,
 			obj = xmalloc(sizeof(priority_factors_object_t));
 			slurm_copy_priority_factors_object(obj,
 						job_ptr->prio_factors);
-			obj->priority_part = job_part_ptr->priority_job_factor /
-					     (double)part_max_priority *
-					     (double)weight_part;
+			obj->priority_part =
+				((flags & PRIORITY_FLAGS_NO_NORMAL_PART) ?
+				 job_part_ptr->priority_job_factor :
+				 job_part_ptr->norm_priority) *
+				(double)weight_part;
 			obj->job_id = job_ptr->job_id;
 			obj->partition = job_part_ptr->name;
 			obj->user_id = job_ptr->user_id;
+
+			if (obj->priority_tres) {
+				_get_tres_factors(job_ptr, job_part_ptr,
+						  obj->priority_tres);
+				_get_tres_prio_weighted(obj->priority_tres);
+			}
+
 			list_append(ret_list, obj);
 		}
 		inx++;
 	}
 	list_iterator_destroy(job_iter);
-}
-
-static void *_cleanup_thread(void *no_data)
-{
-	pthread_join(decay_handler_thread, NULL);
-	return NULL;
 }
 
 static void _internal_setup(void)
@@ -1487,6 +1551,7 @@ static void _internal_setup(void)
 	enforce = slurm_get_accounting_storage_enforce();
 	max_age = slurm_get_priority_max_age();
 	weight_age = slurm_get_priority_weight_age();
+	weight_assoc = slurm_get_priority_weight_assoc();
 	weight_fs = slurm_get_priority_weight_fairshare();
 	weight_js = slurm_get_priority_weight_job_size();
 	weight_part = slurm_get_priority_weight_partition();
@@ -1494,7 +1559,8 @@ static void _internal_setup(void)
 	xfree(weight_tres);
 	if ((tres_weights_str = slurm_get_priority_weight_tres())) {
 		weight_tres = slurm_get_tres_weight_array(tres_weights_str,
-							  slurmctld_tres_cnt);
+							  slurmctld_tres_cnt,
+							  true);
 	}
 	xfree(tres_weights_str);
 	flags = slurm_get_priority_flags();
@@ -1504,6 +1570,7 @@ static void _internal_setup(void)
 		info("priority: AccountingStorageEnforce is %u", enforce);
 		info("priority: Max Age is %u", max_age);
 		info("priority: Weight Age is %u", weight_age);
+		info("priority: Weight Assoc is %u", weight_assoc);
 		info("priority: Weight Fairshare is %u", weight_fs);
 		info("priority: Weight JobSize is %u", weight_js);
 		info("priority: Weight Part is %u", weight_part);
@@ -1729,12 +1796,6 @@ int init ( void )
 
 		slurm_cond_wait(&decay_init_cond, &decay_init_mutex);
 		slurm_mutex_unlock(&decay_init_mutex);
-
-		/* This is here to join the decay thread so we don't core
-		 * dump if in the sleep, since there is no other place to join
-		 * we have to create another thread to do it. */
-		slurm_thread_create(&cleanup_handler_thread,
-				    _cleanup_thread, NULL);
 	} else {
 		if (weight_fs) {
 			fatal("It appears you don't have any association "
@@ -1748,33 +1809,50 @@ int init ( void )
 
 	xfree(temp);
 
+	site_factor_plugin_init();
+
 	debug("%s loaded", plugin_name);
 	return SLURM_SUCCESS;
 }
 
 int fini ( void )
 {
-	/* Daemon termination handled here */
-	slurm_mutex_lock(&decay_lock);
-	if (running_decay)
-		debug("Waiting for decay thread to finish.");
+	plugin_shutdown = time(NULL);
 
-	/* cancel the decay thread and then join the cleanup thread */
+	/* Daemon termination handled here */
+	if (running_decay)
+		debug("Waiting for priority decay thread to finish.");
+
+	slurm_mutex_lock(&decay_lock);
+
+	/* signal the decay thread to end */
 	if (decay_handler_thread)
-		pthread_cancel(decay_handler_thread);
-	if (cleanup_handler_thread)
-		pthread_join(cleanup_handler_thread, NULL);
+		slurm_cond_signal(&decay_cond);
 
 	xfree(weight_tres);
 
 	slurm_mutex_unlock(&decay_lock);
+
+	/* Now join outside the lock */
+	if (decay_handler_thread)
+		pthread_join(decay_handler_thread, NULL);
+
+	site_factor_plugin_fini();
 
 	return SLURM_SUCCESS;
 }
 
 extern uint32_t priority_p_set(uint32_t last_prio, struct job_record *job_ptr)
 {
-	uint32_t priority = _get_priority_internal(time(NULL), job_ptr);
+	uint32_t priority;
+
+	/*
+	 * Run this first so any change to site_factor will be
+	 * included in the summation done inside _get_priority_internal().
+	 */
+	site_factor_g_set(job_ptr);
+
+	priority = _get_priority_internal(time(NULL), job_ptr);
 
 	debug2("initial priority for job %u is %u", job_ptr->job_id, priority);
 
@@ -1808,6 +1886,9 @@ extern void priority_p_reconfig(bool assoc_clear)
 	 */
 	if (assoc_clear)
 		_init_grp_used_cpu_run_secs(g_last_ran);
+
+	site_factor_g_reconfig();
+
 	debug2("%s reconfigured", plugin_name);
 
 	return;
@@ -1894,6 +1975,8 @@ extern List priority_p_get_priority_factors_list(
 	}
 
 	if (job_list && list_count(job_list)) {
+		time_t use_time;
+
 		ret_list = list_create(slurm_destroy_priority_factors_object);
 		itr = list_iterator_create(job_list);
 		while ((job_ptr = list_next(itr))) {
@@ -1908,8 +1991,12 @@ extern List priority_p_get_priority_factors_list(
 			/*
 			 * This means the job is not eligible yet
 			 */
-			if (!job_ptr->details->begin_time
-			    || (job_ptr->details->begin_time > start_time))
+			if (flags & PRIORITY_FLAGS_ACCRUE_ALWAYS)
+				use_time = job_ptr->details->submit_time;
+			else
+				use_time = job_ptr->details->begin_time;
+
+			if (!use_time || (use_time > start_time))
 				continue;
 
 			/*
@@ -2028,29 +2115,21 @@ extern void set_priority_factors(time_t start_time, struct job_record *job_ptr)
 
 	qos_ptr = job_ptr->qos_ptr;
 
-	if (weight_age) {
+	if (weight_age && job_ptr->details->accrue_time) {
 		uint32_t diff = 0;
-		time_t use_time;
 
-		if (flags & PRIORITY_FLAGS_ACCRUE_ALWAYS)
-			use_time = job_ptr->details->submit_time;
+		/*
+		 * Only really add an age priority if the
+		 * job_ptr->details->accrue_time is past the start_time.
+		 */
+		if (start_time > job_ptr->details->accrue_time)
+			diff = start_time - job_ptr->details->accrue_time;
+
+		if (diff < max_age)
+			job_ptr->prio_factors->priority_age =
+				(double)diff / (double)max_age;
 		else
-			use_time = job_ptr->details->begin_time;
-
-		/* Only really add an age priority if the use_time is
-		   past the start_time.
-		*/
-		if (start_time > use_time)
-			diff = start_time - use_time;
-
-		if (job_ptr->details->begin_time
-		    || (flags & PRIORITY_FLAGS_ACCRUE_ALWAYS)) {
-			if (diff < max_age) {
-				job_ptr->prio_factors->priority_age =
-					(double)diff / (double)max_age;
-			} else
-				job_ptr->prio_factors->priority_age = 1.0;
-		}
+			job_ptr->prio_factors->priority_age = 1.0;
 	}
 
 	if (job_ptr->assoc_ptr && weight_fs) {
@@ -2127,11 +2206,23 @@ extern void set_priority_factors(time_t start_time, struct job_record *job_ptr)
 	if (job_ptr->part_ptr && job_ptr->part_ptr->priority_job_factor &&
 	    weight_part) {
 		job_ptr->prio_factors->priority_part =
+			(flags & PRIORITY_FLAGS_NO_NORMAL_PART) ?
+			job_ptr->part_ptr->priority_job_factor :
 			job_ptr->part_ptr->norm_priority;
 	}
 
+	job_ptr->prio_factors->priority_site = job_ptr->site_factor;
+
+	if (job_ptr->assoc_ptr && weight_assoc)
+		job_ptr->prio_factors->priority_assoc =
+			(flags & PRIORITY_FLAGS_NO_NORMAL_ASSOC) ?
+			job_ptr->assoc_ptr->priority :
+			job_ptr->assoc_ptr->usage->priority_norm;
+
 	if (qos_ptr && qos_ptr->priority && weight_qos) {
 		job_ptr->prio_factors->priority_qos =
+			(flags & PRIORITY_FLAGS_NO_NORMAL_QOS) ?
+			qos_ptr->priority :
 			qos_ptr->usage->norm_priority;
 	}
 
@@ -2141,36 +2232,18 @@ extern void set_priority_factors(time_t start_time, struct job_record *job_ptr)
 		job_ptr->prio_factors->nice = NICE_OFFSET;
 
 	if (weight_tres) {
-		int i;
-		double *tres_factors = NULL;
-
 		if (!job_ptr->prio_factors->priority_tres) {
 			job_ptr->prio_factors->priority_tres =
-				xmalloc(sizeof(double) * slurmctld_tres_cnt);
+				xcalloc(slurmctld_tres_cnt, sizeof(double));
 			job_ptr->prio_factors->tres_weights =
-				xmalloc(sizeof(double) * slurmctld_tres_cnt);
+				xcalloc(slurmctld_tres_cnt, sizeof(double));
 			memcpy(job_ptr->prio_factors->tres_weights, weight_tres,
 			       sizeof(double) * slurmctld_tres_cnt);
 			job_ptr->prio_factors->tres_cnt = slurmctld_tres_cnt;
 		}
-		tres_factors = job_ptr->prio_factors->priority_tres;
 
-		/* can't memcpy because of different types
-		 * uint64_t vs. double */
-		for (i = 0; i < slurmctld_tres_cnt; i++) {
-			uint64_t value = 0;
-			if (job_ptr->tres_alloc_cnt)
-				value = job_ptr->tres_alloc_cnt[i];
-			else if (job_ptr->tres_req_cnt)
-				value = job_ptr->tres_req_cnt[i];
-
-			if (value &&
-			    job_ptr->part_ptr &&
-			    job_ptr->part_ptr->tres_cnt &&
-			    job_ptr->part_ptr->tres_cnt[i])
-				tres_factors[i] = value /
-					(double)job_ptr->part_ptr->tres_cnt[i];
-		}
+		_get_tres_factors(job_ptr, job_ptr->part_ptr,
+				  job_ptr->prio_factors->priority_tres);
 	}
 }
 

@@ -13,7 +13,7 @@
 #define MAX_QOSNAME      30
 #define TIMESPEC_LEN     30
 #define MAX_RSVNAME      30
-#define CPUS_PER_NODE    48 
+#define CPUS_PER_NODE    8 
 #define MAX_WF_FILENAME_LEN     1024
 static const char DEFAULT_OFILE[]    = "simple.trace"; //The output trace name should be passed as an argument on command line.
 #define MAX_DEPNAME              1024
@@ -67,8 +67,8 @@ int main(int argc, char* argv[])
         while(p!=NULL){
             if(i==0) { job_arr[idx].job_id = ++job_index; printf("Index is: %d", job_index); }
             else if(i==4) { printf("Submit time: %s\n", p); if (first_arrival == 0) first_arrival =atoi(p); job_arr[idx].submit = 100 + atoi(p) - first_arrival; }  // why submit cannot start from 0? 
-	    else if(i==5) { printf("Ntasks/nodes: %s\n", p); job_arr[idx].tasks = ceil((double)atoi(p)/CPUS_PER_NODE; } //In this convertor, nodes in Cirne model we interpret as CPUS (cores) and we assume 1 task per node
-            else if(i==6) { printf("Wallclock limit: %s\n", p); job_arr[idx].wclimit = ceil((double)atoi(p)/60); }   
+	    else if(i==5) { printf("Ntasks/nodes: %s\n", p); job_arr[idx].tasks = atoi(p); }
+            else if(i==6) { printf("Wallclock limit: %s\n", p); job_arr[idx].wclimit = atoi(p); }   
             else if(i==7) { printf("Startime: %s\n", p); start_time = atoi(p); }
             else if(i==8) { printf("End time: %s\n", p); job_arr[idx].duration = atoi(p) - start_time; printf("Duration: %d\n", job_arr[idx].duration);}
             else printf(" %s\n", p);

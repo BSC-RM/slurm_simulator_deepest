@@ -8,11 +8,11 @@
  *    Christopher J. Morrone <morrone2@llnl.gov>, et. al.
  *  CODE-OCEC-09-009. All rights reserved.
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -28,13 +28,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -56,22 +56,25 @@ extern salloc_opt_t saopt;
 extern int error_exit;		/* exit code for slurm errors */
 extern int immediate_exit;	/* exit code for --immediate option & busy */
 
-/* process options:
+/*
+ * process options:
  * 1. set defaults
  * 2. update options with env vars
  * 3. update options with commandline args
  * 4. perform some verification that options are reasonable
  *
- * argc IN - Count of elements in argv
- * argv IN - Array of elements to parse
- * argc_off OUT - Offset of first non-parsable element  */
-extern int initialize_and_process_args(int argc, char **argv, int *argc_off);
+ * argc      IN - Count of elements in argv
+ * argv      IN - Array of elements to parse
+ * argc_off OUT - Offset of first non-parsable element
+ * pack_inx  IN - offset of job pack
+ */
+extern int initialize_and_process_args(int argc, char **argv, int *argc_off, int pack_inx);
 
 /* set options based upon commandline args */
 void set_options(const int argc, char **argv);
 
 /* external functions available for SPANK plugins to modify the environment
- * exported to the SLURM Prolog and Epilog programs */
+ * exported to the Slurm Prolog and Epilog programs */
 extern char *spank_get_job_env(const char *name);
 extern int   spank_set_job_env(const char *name, const char *value,
 			       int overwrite);

@@ -5,11 +5,11 @@
  *  Written by Tim Wickberg <tim@schedmd.com>
  *  Based on code originally contributed by Takao Hatazaki (HP).
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -25,13 +25,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -52,6 +52,7 @@
 #include "src/common/group_cache.h"
 #include "src/common/list.h"
 #include "src/common/read_config.h"
+#include "src/common/timers.h"
 #include "src/common/uid.h"
 #include "src/common/xmalloc.h"
 #include "src/common/xstring.h"
@@ -121,6 +122,8 @@ static int _group_cache_lookup_internal(gids_cache_needle_t *needle, gid_t **gid
 {
 	gids_cache_t *entry;
 	int ngids; /* need a copy to safely return outside the lock */
+	DEF_TIMERS;
+	START_TIMER;
 
 	slurm_mutex_lock(&gids_mutex);
 	if (!gids_cache_list)
@@ -145,26 +148,37 @@ static int _group_cache_lookup_internal(gids_cache_needle_t *needle, gid_t **gid
 		 */
 		entry->ngids = xsize(entry->gids) / sizeof(gid_t);
 	} else {
-		if (!needle->username)
-			needle->username = uid_to_string(needle->uid);
-		debug2("%s: no entry found for %s",
-		       __func__, needle->username);
 		/* no result, allocate and add to list */
 		entry = xmalloc(sizeof(gids_cache_t));
-		entry->username = xstrdup(needle->username);
+		if (!needle->username)
+			entry->username = uid_to_string(needle->uid);
+		else
+			entry->username = xstrdup(needle->username);
 		entry->uid = needle->uid;
 		entry->gid = needle->gid;
 		entry->ngids = NGROUPS_START;
 		entry->gids = xmalloc(sizeof(gid_t) * entry->ngids);
 		list_prepend(gids_cache_list, entry);
+
+		debug2("%s: no entry found for %s",
+		       __func__, entry->username);
 	}
 
 	entry->expiration = needle->now + slurmctld_conf.group_time;
 
 	/* Cache lookup failed or entry value was too old, fetch new
 	 * value and insert it into cache.  */
+#if defined(__APPLE__)
+	/*
+	 * macOS has (int *) for the third argument instead
+	 * of (gid_t *) like FreeBSD, NetBSD, and Linux.
+	 */
+	while (getgrouplist(entry->username, entry->gid,
+			    (int *)entry->gids, &entry->ngids) == -1) {
+#else
 	while (getgrouplist(entry->username, entry->gid,
 			    entry->gids, &entry->ngids) == -1) {
+#endif
 		/* group list larger than array, resize array to fit */
 		entry->gids = xrealloc(entry->gids,
 				       entry->ngids * sizeof(gid_t));
@@ -172,9 +186,13 @@ static int _group_cache_lookup_internal(gids_cache_needle_t *needle, gid_t **gid
 
 out:
 	ngids = entry->ngids;
+	xfree(*gids);
 	*gids = copy_gids(entry->ngids, entry->gids);
 
 	slurm_mutex_unlock(&gids_mutex);
+
+	END_TIMER3("group_cache_lookup() took",
+		   3000000);
 
 	return ngids;
 }
@@ -232,6 +250,20 @@ extern gid_t *copy_gids(int ngids, gid_t *gids)
 	size = ngids * sizeof(gid_t);
 	result = xmalloc(size);
 	memcpy(result, gids, size);
+
+	return result;
+}
+
+extern char **copy_gr_names(int ngids, char **gr_names)
+{
+	char **result;
+
+	if (!ngids || !gr_names)
+		return NULL;
+
+	result = xcalloc(ngids, sizeof(char *));
+	for (int i = 0; i < ngids; i++)
+		result[i] = xstrdup(gr_names[i]);
 
 	return result;
 }

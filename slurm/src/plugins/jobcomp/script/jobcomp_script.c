@@ -6,11 +6,11 @@
  *  Written by Nathan Huff <nhuff@acm.org>
  *  CODE-OCEC-09-009. All rights reserved.
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -26,13 +26,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
  *****************************************************************************
  *  Here is a list of the environment variables set
@@ -46,7 +46,7 @@
  *  EXITCODE		Job's exit code and after : the signal number (if any)
  *  GID			Group ID of job owner
  *  GROUPNAME		Group name of job owner
- *  JOBID		SLURM Job ID
+ *  JOBID		Slurm Job ID
  *  JOBNAME		Job name
  *  JOBSTATE		Termination state of job (FIXME
  *  NODECNT		Count of allocated nodes
@@ -114,14 +114,14 @@
  * plugin_type - a string suggesting the type of the plugin or its
  * applicability to a particular form of data or method of data handling.
  * If the low-level plugin API is used, the contents of this string are
- * unimportant and may be anything.  SLURM uses the higher-level plugin
+ * unimportant and may be anything.  Slurm uses the higher-level plugin
  * interface which requires this string to be of the form
  *
  *	<application>/<method>
  *
  * where <application> is a description of the intended application of
- * the plugin (e.g., "jobcomp" for SLURM job completion logging) and <method>
- * is a description of how this plugin satisfies that application.  SLURM will
+ * the plugin (e.g., "jobcomp" for Slurm job completion logging) and <method>
+ * is a description of how this plugin satisfies that application.  Slurm will
  * only load job completion logging plugins if the plugin_type string has a
  * prefix of "jobcomp/".
  *
@@ -142,35 +142,6 @@ static pthread_cond_t comp_list_cond = PTHREAD_COND_INITIALIZER;
 static int agent_exit = 0;
 
 /*
- *  Local plugin errno
- */
-static int plugin_errno = SLURM_SUCCESS;
-
-static struct jobcomp_errno {
-	int n;
-	const char *descr;
-} errno_table [] = {
-	{ 0,      "No Error"              },
-	{ EACCES, "Script access denied"  },
-	{ EEXIST, "Script does not exist" },
-	{ EINVAL, "JocCompLoc invalid"    },
-	{ -1,     "Unknown Error"         }
-};
-
-/*
- *  Return string representation of plugin errno
- */
-static const char * _jobcomp_script_strerror (int errnum)
-{
-	struct jobcomp_errno *ep = errno_table;
-
-	while ((ep->n != errnum) && (ep->n != -1))
-		ep++;
-
-	return (ep->descr);
-}
-
-/*
  *  Structure for holding job completion information for later
  *   use by script;
  */
@@ -179,6 +150,7 @@ struct jobcomp_info {
 	uint32_t array_job_id;
 	uint32_t array_task_id;
 	uint32_t exit_code;
+	uint32_t db_flags;
 	uint32_t derived_ec;
 	uint32_t pack_job_id;
 	uint32_t pack_job_offset;
@@ -192,6 +164,7 @@ struct jobcomp_info {
 	time_t start;
 	time_t end;
 	char *cluster;
+	char *constraints;
 	char *group_name;
 	char *orig_dependency;
 	char *nodes;
@@ -203,24 +176,24 @@ struct jobcomp_info {
 	char *work_dir;
 	char *user_name;
 	char *reservation;
+	uint32_t state_reason_prev;
 	char *std_in;
 	char *std_out;
 	char *std_err;
 	uint16_t backfilled;
-#ifdef HAVE_BG
-	char *connect_type;
-	char *geometry;
-	char *blockid;
-#endif
 };
 
 static struct jobcomp_info * _jobcomp_info_create (struct job_record *job)
 {
 	enum job_states state;
-	struct jobcomp_info * j = xmalloc (sizeof (*j));
+	struct jobcomp_info *j = xmalloc(sizeof(struct jobcomp_info));
 
 	j->jobid = job->job_id;
 	j->exit_code = job->exit_code;
+	if (job->details)
+		j->constraints = xstrdup(job->details->features);
+	j->db_flags = job->db_flags;
+	j->state_reason_prev = job->state_reason_prev_db;
 	j->derived_ec = job->derived_ec;
 	j->uid = job->user_id;
 	j->user_name = xstrdup(uid_to_string_cached((uid_t)job->user_id));
@@ -299,14 +272,6 @@ static struct jobcomp_info * _jobcomp_info_create (struct job_record *job)
 			j->std_err = xstrdup(job->details->std_err);
 	}
 	j->backfilled = job->backfilled;
-#ifdef HAVE_BG
-	j->connect_type = select_g_select_jobinfo_xstrdup(job->select_jobinfo,
-						   SELECT_PRINT_CONNECTION);
-	j->geometry = select_g_select_jobinfo_xstrdup(job->select_jobinfo,
-					       SELECT_PRINT_GEOMETRY);
-	j->blockid = select_g_select_jobinfo_xstrdup(job->select_jobinfo,
-					      SELECT_PRINT_BG_ID);
-#endif
 	return (j);
 }
 
@@ -331,11 +296,6 @@ static void _jobcomp_info_destroy(void *arg)
 	xfree (j->std_err);
 	xfree (j->user_name);
 	xfree (j->work_dir);
-#ifdef HAVE_BG
-	xfree (j->blockid);
-	xfree (j->connect_type);
-	xfree (j->geometry);
-#endif
 	xfree (j);
 }
 
@@ -348,17 +308,14 @@ _check_script_permissions(char * path)
 	struct stat st;
 
 	if (stat(path, &st) < 0) {
-		plugin_errno = errno;
 		return error("jobcomp/script: failed to stat %s: %m", path);
 	}
 
 	if (!(st.st_mode & S_IFREG)) {
-		plugin_errno = EACCES;
 		return error("jobcomp/script: %s isn't a regular file", path);
 	}
 
 	if (access(path, X_OK) < 0) {
-		plugin_errno = EACCES;
 		return error("jobcomp/script: %s is not executable", path);
 	}
 
@@ -459,8 +416,13 @@ static char ** _create_environment (struct jobcomp_info *job)
 	_env_append_fmt (&env, "PROCS", "%u",  job->nprocs);
 	_env_append_fmt (&env, "NODECNT", "%u", job->nnodes);
 
+	tz = slurmdb_job_flags_str(job->db_flags);
+	_env_append (&env, "DB_FLAGS", tz);
+	xfree(tz);
+
 	_env_append (&env, "BATCH", (job->batch_flag ? "yes" : "no"));
 	_env_append (&env, "CLUSTER",	job->cluster);
+	_env_append (&env, "CONSTRAINTS", job->constraints);
 	_env_append (&env, "NODES",     job->nodes);
 	_env_append (&env, "ACCOUNT",   job->account);
 	_env_append (&env, "JOBNAME",   job->name);
@@ -472,6 +434,8 @@ static char ** _create_environment (struct jobcomp_info *job)
 	_env_append (&env, "RESERVATION", job->reservation);
 	_env_append (&env, "USERNAME", job->user_name);
 	_env_append (&env, "GROUPNAME", job->group_name);
+	_env_append (&env, "STATEREASONPREV",
+		     job_reason_string(job->state_reason_prev));
 	if (job->std_in)
 		_env_append (&env, "STDIN",     job->std_in);
 	if (job->std_out)
@@ -481,11 +445,6 @@ static char ** _create_environment (struct jobcomp_info *job)
 	mins2time_str(job->limit, time_str, sizeof(time_str));
 	_env_append (&env, "LIMIT", time_str);
 	_env_append (&env, "BACKFILLED", (job->backfilled ? "yes" : "no"));
-#ifdef HAVE_BG
-	_env_append (&env, "BLOCKID",      job->blockid);
-	_env_append (&env, "CONNECT_TYPE", job->connect_type);
-	_env_append (&env, "GEOMETRY",     job->geometry);
-#endif
 
 	if ((tz = getenv ("TZ")))
 		_env_append_fmt (&env, "TZ", "%s", tz);
@@ -645,7 +604,6 @@ extern int init(void)
 extern int slurm_jobcomp_set_location (char * location)
 {
 	if (location == NULL) {
-		plugin_errno = EACCES;
 		return error("jobcomp/script JobCompLoc needs to be set");
 	}
 
@@ -675,18 +633,6 @@ int slurm_jobcomp_log_record (struct job_record *record)
 	return SLURM_SUCCESS;
 }
 
-/* Return the error code of the plugin*/
-extern int slurm_jobcomp_get_errno(void)
-{
-	return plugin_errno;
-}
-
-/* Return a string representation of the error */
-extern const char * slurm_jobcomp_strerror(int errnum)
-{
-	return _jobcomp_script_strerror (errnum);
-}
-
 /* Called when script unloads */
 extern int fini ( void )
 {
@@ -694,7 +640,9 @@ extern int fini ( void )
 	if (script_thread) {
 		verbose("Script Job Completion plugin shutting down");
 		agent_exit = 1;
+		slurm_mutex_lock(&comp_list_mutex);
 		slurm_cond_broadcast(&comp_list_cond);
+		slurm_mutex_unlock(&comp_list_mutex);
 		pthread_join(script_thread, NULL);
 		script_thread = 0;
 	}

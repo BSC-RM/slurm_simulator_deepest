@@ -7,11 +7,11 @@
  *  Written by Morris Jette <jette1@llnl.gov>
  *  CODE-OCEC-09-009. All rights reserved.
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -27,13 +27,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -434,7 +434,6 @@ scontrol_hold(char *op, char *job_str)
 				slurm_free_job_array_resp(resp);
 				resp = NULL;
 			}
-			job_msg.job_id_str = _next_job_id();
 		}
 		return rc;
 	} else if (job_str) {
@@ -591,7 +590,7 @@ scontrol_suspend(char *op, char *job_str)
  * IN job_id_str - a job id
  */
 extern void
-scontrol_requeue(char *job_str)
+scontrol_requeue(uint32_t flags, char *job_str)
 {
 	char *job_id_str;
 	int rc, i;
@@ -610,7 +609,7 @@ scontrol_requeue(char *job_str)
 	if (_is_job_id(job_str)) {
 		job_id_str = _next_job_id();
 		while (job_id_str) {
-			rc = slurm_requeue2(job_id_str, 0, &resp);
+			rc = slurm_requeue2(job_id_str, flags, &resp);
 			if (rc != SLURM_SUCCESS) {
 				exit_code = 1;
 				if (quiet_flag != 1) {
@@ -648,18 +647,18 @@ scontrol_requeue(char *job_str)
 }
 
 extern void
-scontrol_requeue_hold(uint32_t state_flag, char *job_str)
+scontrol_requeue_hold(uint32_t flags, char *job_str)
 {
 	int rc, i;
 	char *job_id_str;
 	job_array_resp_msg_t *resp = NULL;
 
-	state_flag |= JOB_REQUEUE_HOLD;
+	flags |= JOB_REQUEUE_HOLD;
 
 	if (_is_job_id(job_str)) {
 		job_id_str = _next_job_id();
 		while (job_id_str) {
-			rc = slurm_requeue2(job_id_str, state_flag, &resp);
+			rc = slurm_requeue2(job_id_str, flags, &resp);
 			if (rc != SLURM_SUCCESS) {
 				exit_code = 1;
 				if (quiet_flag != 1) {
@@ -753,10 +752,15 @@ extern int scontrol_update_job(int argc, char **argv)
 			}
 			val++;
 			vallen = strlen(val);
-		} else if (xstrncasecmp(tag, "Nice", MAX(strlen(tag), 2)) == 0){
-			/* "Nice" is the only tag that might not have an
-			   equal sign, so it is handled specially. */
+		}
+		/* Handle any tags that might not have an equal sign here */
+		else if (xstrncasecmp(tag, "Nice", MAX(strlen(tag), 2)) == 0) {
 			job_msg.nice = NICE_OFFSET + 100;
+			update_cnt++;
+			continue;
+		} else if (!xstrncasecmp(tag, "ResetAccrueTime",
+					 MAX(strlen(tag), 3))) {
+			job_msg.bitflags |= RESET_ACCRUE_TIME;
 			update_cnt++;
 			continue;
 		} else if (!val && argv[i + 1]) {
@@ -775,7 +779,7 @@ extern int scontrol_update_job(int argc, char **argv)
 			job_msg.job_id_str = val;
 		}
 		else if (xstrncasecmp(tag, "AdminComment",
-				      MAX(taglen, 3)) == 0) {
+				      MAX(taglen, 6)) == 0) {
 			if (add_info) {
 				if (add_info[0] == '-') {
 					error("Invalid syntax, AdminComment can not be subtracted from.");
@@ -791,6 +795,19 @@ extern int scontrol_update_job(int argc, char **argv)
 				add_info = NULL;
 			} else
 				job_msg.admin_comment = val;
+			update_cnt++;
+		}
+		else if (xstrncasecmp(tag, "SiteFactor",
+				      MAX(taglen, 5)) == 0) {
+			long long tmp_prio;
+			tmp_prio = strtoll(val, (char **)NULL, 10);
+			if (llabs(tmp_prio) > (NICE_OFFSET - 3)) {
+				error("SiteFactor value out of range (+/- %u). Value ignored",
+				      NICE_OFFSET - 3);
+				exit_code = 1;
+				return 0;
+			}
+			job_msg.site_factor = NICE_OFFSET + tmp_prio;
 			update_cnt++;
 		}
 		else if (xstrncasecmp(tag, "ArrayTaskThrottle",
@@ -913,12 +930,16 @@ extern int scontrol_update_job(int argc, char **argv)
 			job_msg.nice = NICE_OFFSET + tmp_nice;
 			update_cnt++;
 		}
-		else if (xstrncasecmp(tag, "CPUsPerTask", MAX(taglen, 6)) == 0) {
+		else if (!xstrncasecmp(tag, "CPUsPerTask", MAX(taglen, 9))) {
 			if (parse_uint16(val, &job_msg.cpus_per_task)) {
 				error("Invalid CPUsPerTask value: %s", val);
 				exit_code = 1;
 				return 0;
 			}
+			update_cnt++;
+		}
+		else if (!xstrncasecmp(tag, "CpusPerTres", MAX(taglen, 9))) {
+			job_msg.cpus_per_tres = val;
 			update_cnt++;
 		}
 		else if (xstrncasecmp(tag, "NumCPUs", MAX(taglen, 6)) == 0) {
@@ -936,7 +957,7 @@ extern int scontrol_update_job(int argc, char **argv)
 				job_msg.max_cpus = max_cpus;
 			update_cnt++;
 		}
-		/* ReqProcs was removed in SLURM version 2.1 */
+		/* ReqProcs was removed in Slurm version 2.1 */
 		else if ((xstrncasecmp(tag, "NumTasks", MAX(taglen, 8)) == 0) ||
 			 (xstrncasecmp(tag, "ReqProcs", MAX(taglen, 8)) == 0)) {
 			if (parse_uint32(val, &job_msg.num_tasks)) {
@@ -954,7 +975,7 @@ extern int scontrol_update_job(int argc, char **argv)
 			}
 			update_cnt++;
 		}
-		/* ReqNodes was replaced by NumNodes in SLURM version 2.1 */
+		/* ReqNodes was replaced by NumNodes in Slurm version 2.1 */
 		else if ((xstrncasecmp(tag, "ReqNodes", MAX(taglen, 8)) == 0) ||
 		         (xstrncasecmp(tag, "NumNodes", MAX(taglen, 8)) == 0)) {
 			int min_nodes, max_nodes, rc;
@@ -1096,7 +1117,7 @@ extern int scontrol_update_job(int argc, char **argv)
 			else if (xstrncasecmp(val, "NO", MAX(vallen, 1)) == 0)
 				job_msg.shared = 0;
 			else if (parse_uint16(val, &job_msg.shared)) {
-				error ("Invalid wait-for-switch value: %s", val);
+				error("Invalid OverSubscribe value: %s", val);
 				exit_code = 1;
 				return 0;
 			}
@@ -1124,6 +1145,10 @@ extern int scontrol_update_job(int argc, char **argv)
 			}
 			update_cnt++;
 		}
+		else if (!xstrncasecmp(tag, "MemPerTres", MAX(taglen, 5))) {
+			job_msg.mem_per_tres = val;
+			update_cnt++;
+		}
 		else if (xstrncasecmp(tag, "ThreadSpec", MAX(taglen, 4)) == 0) {
 			if (!xstrcmp(val, "-1") || !xstrcmp(val, "*"))
 				job_msg.core_spec = INFINITE16;
@@ -1133,6 +1158,34 @@ extern int scontrol_update_job(int argc, char **argv)
 				return 0;
 			} else
 				job_msg.core_spec |= CORE_SPEC_THREAD;
+			update_cnt++;
+		}
+		else if (!xstrncasecmp(tag, "TresBind", MAX(taglen, 5))) {
+			job_msg.tres_bind = val;
+			update_cnt++;
+		}
+		else if (!xstrncasecmp(tag, "TresFreq", MAX(taglen, 5))) {
+			job_msg.tres_freq = val;
+			update_cnt++;
+		}
+		else if (!xstrncasecmp(tag, "TresPerJob", MAX(taglen, 8))) {
+			job_msg.tres_per_job = val;
+			update_cnt++;
+		}
+		else if (!xstrncasecmp(tag, "TresPerNode", MAX(taglen, 8))) {
+			/* "gres" replaced by "tres_per_node" in v18.08 */
+			if (job_msg.tres_per_node)
+				xstrfmtcat(job_msg.tres_per_node, ",%s", val);
+			else
+				job_msg.tres_per_node = xstrdup(val);
+			update_cnt++;
+		}
+		else if (!xstrncasecmp(tag, "TresPerSocket", MAX(taglen, 8))) {
+			job_msg.tres_per_socket = val;
+			update_cnt++;
+		}
+		else if (!xstrncasecmp(tag, "TresPerTask", MAX(taglen, 8))) {
+			job_msg.tres_per_task = val;
 			update_cnt++;
 		}
 		else if (xstrncasecmp(tag, "ExcNodeList", MAX(taglen, 3)) == 0){
@@ -1150,11 +1203,14 @@ extern int scontrol_update_job(int argc, char **argv)
 			update_cnt++;
 		}
 		else if (xstrncasecmp(tag, "Gres", MAX(taglen, 2)) == 0) {
+			/* "gres" replaced by "tres_per_node" in v18.08 */
 			if (!xstrcasecmp(val, "help") ||
 			    !xstrcasecmp(val, "list")) {
 				print_gres_help();
+			} else if (job_msg.tres_per_node) {
+				xstrfmtcat(job_msg.tres_per_node, ",%s", val);
 			} else {
-				job_msg.gres = val;
+				job_msg.tres_per_node = xstrdup(val);
 				update_cnt++;
 			}
 		}
@@ -1169,64 +1225,6 @@ extern int scontrol_update_job(int argc, char **argv)
 		else if (xstrncasecmp(tag, "Dependency", MAX(taglen, 1)) == 0) {
 			job_msg.dependency = val;
 			update_cnt++;
-		}
-		else if (xstrncasecmp(tag, "Geometry", MAX(taglen, 2)) == 0) {
-			char* token, *delimiter = ",x", *next_ptr;
-			int j, rc = 0;
-			int dims = slurmdb_setup_cluster_dims();
-			uint16_t geo[dims];
-			char* geometry_tmp = xstrdup(val);
-			char* original_ptr = geometry_tmp;
-			token = strtok_r(geometry_tmp, delimiter, &next_ptr);
-			for (j=0; j<dims; j++) {
-				if (token == NULL) {
-					error("insufficient dimensions in "
-						"Geometry");
-					rc = -1;
-					break;
-				}
-				geo[j] = (uint16_t) atoi(token);
-				if (geo[j] <= 0) {
-					error("invalid --geometry argument");
-					rc = -1;
-					break;
-				}
-				geometry_tmp = next_ptr;
-				token = strtok_r(geometry_tmp, delimiter,
-					&next_ptr);
-			}
-			if (token != NULL) {
-				error("too many dimensions in Geometry");
-				rc = -1;
-			}
-
-			if (original_ptr)
-				xfree(original_ptr);
-			if (rc != 0)
-				exit_code = 1;
-			else {
-				for (j=0; j<dims; j++)
-					job_msg.geometry[j] = geo[j];
-				update_cnt++;
-			}
-		}
-
-		else if (xstrncasecmp(tag, "Rotate", MAX(taglen, 2)) == 0) {
-			if (xstrncasecmp(val, "YES", MAX(vallen, 1)) == 0)
-				job_msg.rotate = 1;
-			else if (xstrncasecmp(val, "NO", MAX(vallen, 1)) == 0)
-				job_msg.rotate = 0;
-			else if (parse_uint16(val, &job_msg.rotate)) {
-				error ("Invalid rotate value: %s", val);
-				exit_code = 1;
-				return 0;
-			}
-			update_cnt++;
-		}
-		else if (xstrncasecmp(tag, "Conn-Type", MAX(taglen, 2)) == 0) {
-			verify_conn_type(val, job_msg.conn_type);
-			if (job_msg.conn_type[0] != NO_VAL16)
-				update_cnt++;
 		}
 		else if (xstrncasecmp(tag, "Licenses", MAX(taglen, 1)) == 0) {
 			job_msg.licenses = val;
@@ -1270,6 +1268,9 @@ extern int scontrol_update_job(int argc, char **argv)
 			if ((job_msg.deadline = parse_time(val, 0))) {
 				update_cnt++;
 			}
+		} else if (!xstrncasecmp(tag, "WorkDir", MAX(taglen, 2))) {
+			job_msg.work_dir = val;
+			update_cnt++;
 		}
 		else {
 			exit_code = 1;
@@ -1406,12 +1407,17 @@ static void _update_job_size(uint32_t job_id)
 	FILE *resize_csh = NULL, *resize_sh = NULL;
 
 	if (!getenv("SLURM_JOBID"))
-		return;		/*No job environment here to update */
+		return;		/* No job environment here to update */
 
 	if (slurm_allocation_lookup(job_id, &alloc_info) !=
 	    SLURM_SUCCESS) {
-		slurm_perror("slurm_allocation_lookup");
-		return;
+		if (slurm_get_errno() != ESLURM_ALREADY_DONE) {
+			slurm_perror("slurm_allocation_lookup");
+			return;
+		}
+		/* Job size reset to zero, not an error */
+		alloc_info = xmalloc(sizeof(resource_allocation_response_msg_t));
+		alloc_info->node_list = xstrdup("");
 	}
 
 	xstrfmtcat(fname_csh, "slurm_job_%u_resize.csh", job_id);
@@ -1484,7 +1490,7 @@ static void _update_job_size(uint32_t job_id)
 		fprintf(resize_csh, "unsetenv SLURM_TASKS_PER_NODE\n");
 	}
 
-	printf("To reset SLURM environment variables, execute\n");
+	printf("To reset Slurm environment variables, execute\n");
 	printf("  For bash or sh shells:  . ./%s\n", fname_sh);
 	printf("  For csh shells:         source ./%s\n", fname_csh);
 
@@ -1497,42 +1503,30 @@ fini:	slurm_free_resource_allocation_response_msg(alloc_info);
 		fclose(resize_sh);
 }
 
-/* parse_requeue_args()
+/*
+ * parse_requeue_args()
  * IN s - string to parse
  * OUT flags - flags to set based upon argument
  * RET 0 on successful parse, -1 otherwise
  */
-extern int
-parse_requeue_flags(char *s, uint32_t *flags)
+extern int parse_requeue_flags(char *s, uint32_t *flags)
 {
-	char *p, *p0, *z;
+	int len;
 
-	p0 = p = xstrdup(s);
-	/* search for =
-	 */
-	z = strchr(p, '=');
-	if (!z) {
-		xfree(p0);
-		return -1;
-	}
-	*z = 0;
-
-	/* validate flags keyword
-	 */
-	if (xstrncasecmp(p, "state", 5)) {
-		xfree(p0);
-		return -1;
-	}
-	++z;
-
-	p = z;
-	if (!xstrncasecmp(p, "specialexit", 11) || !xstrncasecmp(p, "se", 2)) {
-		*flags = JOB_SPECIAL_EXIT;
-		xfree(p0);
+	len = strlen(s);
+	if (!xstrncasecmp(s, "incomplete", len)) {
+		*flags |= JOB_RUNNING;
 		return 0;
 	}
 
-	xfree(p0);
+	if (xstrncasecmp(s, "state=", 6))
+		return -1;
+	s += 6;
+	if (!xstrncasecmp(s, "specialexit", 11) || !xstrncasecmp(s, "se", 2)) {
+		*flags |= JOB_SPECIAL_EXIT;
+		return 0;
+	}
+
 	return -1;
 }
 

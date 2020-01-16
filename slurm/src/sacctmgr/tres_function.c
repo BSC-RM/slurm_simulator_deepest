@@ -4,11 +4,11 @@
  *  Copyright (C) 2015 SchedMD LLC.
  *  Written by David Bigagli <david@schedmd.com>
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -24,13 +24,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -182,24 +182,29 @@ int sacctmgr_list_tres(int argc, char **argv)
 	/* For each tres prints the data structure members
 	 */
 	while ((tres = list_next(itr))) {
+		int curr_inx = 1;
 		while ((field = list_next(itr2))) {
 			switch (field->type) {
 				case PRINT_NAME:
 					field->print_routine(field,
 							     tres->name,
-							     field_count);
+							     (curr_inx ==
+							      field_count));
 					break;
 				case PRINT_ID:
 					field->print_routine(field,
 							     tres->id,
-							     field_count);
+							     (curr_inx ==
+							      field_count));
 					break;
 				case PRINT_TYPE:
 					field->print_routine(field,
 							     tres->type,
-							     field_count);
+							     (curr_inx ==
+							      field_count));
 					break;
 			}
+			curr_inx++;
 		}
 		list_iterator_reset(itr2);
 		printf("\n");

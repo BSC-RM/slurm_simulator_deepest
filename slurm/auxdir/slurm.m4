@@ -108,30 +108,23 @@ AC_DEFUN([X_AC_LIBSLURM], [
 
   if test "$x_ac_shared_libslurm" = no; then
     LIB_SLURM_BUILD='$(top_builddir)/src/api/libslurm.o'
-    LIB_SLURMDB_BUILD='$(top_builddir)/src/db_api/libslurmdb.o'
     LIB_SLURM=$LIB_SLURM_BUILD
-    LIB_SLURMDB=$LIB_SLURMDB_BUILD
     AC_MSG_RESULT([static]);
   else
     # The *_BUILD variables are here to make sure these are made before
     # compiling the bin
     LIB_SLURM_BUILD='$(top_builddir)/src/api/full_version.map $(top_builddir)/src/api/libslurmfull.la'
-    LIB_SLURMDB_BUILD='$(top_builddir)/src/db_api/version.map $(top_builddir)/src/db_api/libslurmdb.la'
     # You will notice " or ' each does something different when resolving
     # variables.  Some need to be resolved now ($libdir) and others
     # ($(top_builddir)) need to be resolved when dealing with the Makefile.am's
     LIB_SLURM="-Wl,-rpath=$libdir/slurm"
-    LIB_SLURM+=' -L$(top_builddir)/src/api/.libs -lslurmfull'
+    LIB_SLURM=$LIB_SLURM' -L$(top_builddir)/src/api/.libs -lslurmfull'
 
-    LIB_SLURMDB="-Wl,-rpath=$libdir/slurm"
-    LIB_SLURMDB+=' -L$(top_builddir)/src/api/.libs -L$(top_builddir)/src/db_api/.libs -lslurmdb -lslurmfull'
     AC_MSG_RESULT([shared]);
   fi
 
   AC_SUBST(LIB_SLURM)
-  AC_SUBST(LIB_SLURMDB)
   AC_SUBST(LIB_SLURM_BUILD)
-  AC_SUBST(LIB_SLURMDB_BUILD)
 ])
 
 dnl
@@ -167,7 +160,7 @@ AC_DEFUN([X_AC_SLURM_BIGENDIAN],
 ])dnl AC_SLURM_BIGENDIAN
 
 dnl
-dnl Perform SLURM Project version setup
+dnl Perform Slurm Project version setup
 dnl
 AC_DEFUN([X_AC_SLURM_VERSION],
 [
@@ -220,7 +213,7 @@ RELEASE="`perl -ne 'print,exit if s/^\s*RELEASE:\s*(\S*).*/\1/i' $srcdir/META`"
 # (e.g. "pre1" in the MICRO), but may be suitable for the user determining 
 # how to use the APIs or other differences. 
 SLURM_VERSION_NUMBER="`printf "0x%02x%02x%02x" ${SLURM_MAJOR#0} ${SLURM_MINOR#0} ${SLURM_MICRO#0}`"
-AC_DEFINE_UNQUOTED(SLURM_VERSION_NUMBER, $SLURM_VERSION_NUMBER, [SLURM Version Number])
+AC_DEFINE_UNQUOTED(SLURM_VERSION_NUMBER, $SLURM_VERSION_NUMBER, [Slurm Version Number])
 AC_SUBST(SLURM_VERSION_NUMBER)
 
 if test "$SLURM_MAJOR.$SLURM_MINOR.$SLURM_MICRO" != "$VERSION"; then

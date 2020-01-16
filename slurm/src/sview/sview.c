@@ -7,11 +7,11 @@
  *  Written by Danny Auble <da@llnl.gov>, et. al.
  *  CODE-OCEC-09-009. All rights reserved.
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -27,13 +27,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -89,7 +89,6 @@ switch_record_bitmaps_t *g_switch_nodes_maps = NULL;
 popup_pos_t popup_pos;
 char *federation_name = NULL;
 
-block_info_msg_t *g_block_info_ptr = NULL;
 front_end_info_msg_t *g_front_end_info_ptr;
 job_info_msg_t *g_job_info_ptr = NULL;
 node_info_msg_t *g_node_info_ptr = NULL;
@@ -133,25 +132,10 @@ display_data_t main_display_data[] = {
 	 refresh_main, create_model_bb, admin_edit_bb,
 	 get_info_bb, specific_info_bb,
 	 set_menus_bb, NULL},
-#ifdef HAVE_BG
-	{G_TYPE_NONE, BLOCK_PAGE, "BG Blocks", true, -1,
-	 refresh_main, NULL, NULL,
-	 get_info_block, specific_info_block,
-	 set_menus_block, NULL},
-	{G_TYPE_NONE, NODE_PAGE, "Midplanes", false, -1,
-	 refresh_main, NULL, NULL,
-	 get_info_node, specific_info_node,
-	 set_menus_node, NULL},
-#else
-	{G_TYPE_NONE, BLOCK_PAGE, "BG Blocks", false, -1,
-	 refresh_main, NULL, NULL,
-	 get_info_block, specific_info_block,
-	 set_menus_block, NULL},
 	{G_TYPE_NONE, NODE_PAGE, "Nodes", false, -1,
 	 refresh_main, NULL, NULL,
 	 get_info_node, specific_info_node,
 	 set_menus_node, NULL},
-#endif
 	{G_TYPE_NONE, FRONT_END_PAGE, "Front End Nodes", false, -1,
 	 refresh_main, create_model_front_end, admin_edit_front_end,
 	 get_info_front_end, specific_info_front_end,
@@ -275,7 +259,7 @@ void *_grid_init_thr(void *arg)
 }
 
 static void _page_switched(GtkNotebook     *notebook,
-			   GtkNotebookPage *page,
+			   GtkNotebookTab  *page,
 			   guint            page_num,
 			   gpointer         user_data)
 {
@@ -462,7 +446,6 @@ static void _set_ruled(GtkToggleAction *action)
 			"Tables ruled");
 
 	/* get rid of each existing table */
-	cluster_change_block();
 	cluster_change_front_end();
 	cluster_change_resv();
 	cluster_change_part();
@@ -638,8 +621,6 @@ static gboolean _delete(GtkWidget *widget,
 	fini = 1;
 	gtk_main_quit();
 
-	select_g_ba_fini();
-
 #ifdef MEMORY_LEAK_DEBUG
 	FREE_NULL_LIST(popup_list);
 	FREE_NULL_LIST(grid_button_list);
@@ -648,6 +629,7 @@ static gboolean _delete(GtkWidget *widget,
 	FREE_NULL_LIST(cluster_list);
 	xfree(orig_cluster_name);
 	uid_cache_clear();
+	assoc_mgr_fini(0);
 #endif
 	for (i = 0; i<debug_action_entries; i++) {
 		xfree(debug_actions[i].name);
@@ -676,26 +658,14 @@ static char *_get_ui_description()
 		"        <menuitem action='jobid'/>"
 		"        <menuitem action='user_jobs'/>"
 		"        <menuitem action='state_jobs'/>");
-	if (cluster_flags & CLUSTER_FLAG_BG)
-		xstrcat(ui_description,
-			"      <separator/>"
-			"        <menuitem action='bg_block_name'/>"
-			"        <menuitem action='bg_block_size'/>"
-			"        <menuitem action='bg_block_state'/>");
-
 	xstrcat(ui_description,
 		"      <separator/>"
 		"        <menuitem action='partition_name'/>"
 		"        <menuitem action='partition_state'/>"
 		"      <separator/>");
-	if (cluster_flags & CLUSTER_FLAG_BG)
-		xstrcat(ui_description,
-			"        <menuitem action='node_name_bg'/>"
-			"        <menuitem action='node_state_bg'/>");
-	else
-		xstrcat(ui_description,
-			"        <menuitem action='node_name'/>"
-			"        <menuitem action='node_state'/>");
+	xstrcat(ui_description,
+		"        <menuitem action='node_name'/>"
+		"        <menuitem action='node_state'/>");
 	xstrcat(ui_description,
 		"      <separator/>"
 		"        <menuitem action='reservation_name'/>"
@@ -765,6 +735,24 @@ static char *_get_ui_description()
 	return ui_description;
 }
 
+static bool _user_is_admin(void)
+{
+	uid_t uid = getuid();
+	void *db_conn = NULL;
+	slurmdb_admin_level_t level;
+
+	if ((uid == 0) || uid == slurm_get_slurm_user_id())
+		return true;
+
+	if (!(db_conn = slurmdb_connection_get()))
+		return false;
+
+	level = assoc_mgr_get_admin_level(db_conn, uid);
+	slurmdb_connection_close(&db_conn);
+
+	return (level >= SLURMDB_ADMIN_SUPER_USER);
+}
+
 /* Returns a menubar widget made from the above menu */
 static GtkWidget *_get_menubar_menu(GtkWidget *window, GtkWidget *notebook)
 {
@@ -793,10 +781,10 @@ static GtkWidget *_get_menubar_menu(GtkWidget *window, GtkWidget *notebook)
 		 "", "Search for job(s) in a specific state",
 		 G_CALLBACK(create_search_popup)},
 		{"partition_name", NULL, "Slurm Partition Name",
-		 "", "Search for a specific SLURM partition",
+		 "", "Search for a specific Slurm partition",
 		 G_CALLBACK(create_search_popup)},
 		{"partition_state", NULL, "Slurm Partition State",
-		 "", "Search for SLURM partitions in a given state",
+		 "", "Search for Slurm partitions in a given state",
 		 G_CALLBACK(create_search_popup)},
 		{"reservation_name", NULL, "Reservation Name",
 		 "", "Search for reservation",
@@ -832,29 +820,7 @@ static GtkWidget *_get_menubar_menu(GtkWidget *window, GtkWidget *notebook)
 		 G_CALLBACK(configure_defaults)},
 	};
 
-	GtkActionEntry bg_entries[] = {
-		{"bg_block_name", NULL, "BG Block Name",
-		 "", "Search for a specific BG Block",
-		 G_CALLBACK(create_search_popup)},
-		{"bg_block_size", NULL, "BG Block Size",
-		 "",
-		 "Search for BG Blocks having given size in cnodes",
-		 G_CALLBACK(create_search_popup)},
-		{"bg_block_state", NULL, "BG Block State",
-		 "",
-		 "Search for BG Blocks having given state",
-		 G_CALLBACK(create_search_popup)},
-		{"node_name_bg", NULL,
-		 "Midplane(s) Name",
-		 "", "Search for a specific Midplane(s)",
-		 G_CALLBACK(create_search_popup)},
-		{"node_state_bg", NULL,
-		 "Midplane State",
-		 "", "Search for a Midplane in a given state",
-		 G_CALLBACK(create_search_popup)},
-	};
-
-	GtkActionEntry nonbg_entries[] = {
+	GtkActionEntry node_entries[] = {
 		{"node_name", NULL,
 		 "Node(s) Name",
 		 "", "Search for a specific Node(s)",
@@ -957,10 +923,8 @@ static GtkWidget *_get_menubar_menu(GtkWidget *window, GtkWidget *notebook)
 	gtk_action_group_add_actions(menu_action_group, entries,
 				     G_N_ELEMENTS(entries), window);
 
-	gtk_action_group_add_actions(menu_action_group, bg_entries,
-				     G_N_ELEMENTS(bg_entries), window);
-	gtk_action_group_add_actions(menu_action_group, nonbg_entries,
-				     G_N_ELEMENTS(nonbg_entries),
+	gtk_action_group_add_actions(menu_action_group, node_entries,
+				     G_N_ELEMENTS(node_entries),
 				     window);
 
 	gtk_action_group_add_radio_actions(menu_action_group, radio_entries,
@@ -982,6 +946,16 @@ static GtkWidget *_get_menubar_menu(GtkWidget *window, GtkWidget *notebook)
 				     window);
 	gtk_action_group_set_sensitive(admin_action_group,
 				       working_sview_config.admin_mode);
+
+	/*
+	 * If user is neither root, slurm user, nor listed as a super user
+	 * in the db, disable admin_mode.
+	 */
+	if (!_user_is_admin()) {
+		GtkAction *tmp = NULL;
+		tmp = gtk_action_group_get_action(menu_action_group, "admin");
+		gtk_action_set_sensitive(tmp, false);
+	}
 
 	g_ui_manager = gtk_ui_manager_new();
 	gtk_ui_manager_insert_action_group(g_ui_manager, menu_action_group, 0);
@@ -1090,7 +1064,6 @@ static void _get_info_tabs(GtkTable *table, display_data_t *display_data)
 extern void _change_cluster_main(GtkComboBox *combo, gpointer extra)
 {
 	GtkTreeModel *model;
-	display_data_t *display_data;
 	GtkTreeIter iter;
 	slurmdb_cluster_rec_t *cluster_rec = NULL;
 	char *tmp, *ui_description, *selected_name;
@@ -1125,8 +1098,6 @@ extern void _change_cluster_main(GtkComboBox *combo, gpointer extra)
 	/* } */
 
 	/* free old info under last cluster */
-	slurm_free_block_info_msg(g_block_info_ptr);
-	g_block_info_ptr = NULL;
 	slurm_free_front_end_info_msg(g_front_end_info_ptr);
 	g_front_end_info_ptr = NULL;
 	slurm_free_burst_buffer_info_msg(g_bb_info_ptr);
@@ -1177,35 +1148,6 @@ extern void _change_cluster_main(GtkComboBox *combo, gpointer extra)
 			gtk_widget_show(grid_window);
 	}
 
-	display_data = main_display_data;
-	while (display_data++) {
-		if (display_data->id == -1)
-			break;
-		if (cluster_flags & CLUSTER_FLAG_BG) {
-			switch (display_data->id) {
-			case BLOCK_PAGE:
-				display_data->show = true;
-				break;
-			case NODE_PAGE:
-				display_data->name = "Midplanes";
-				break;
-			default:
-				break;
-			}
-		} else {
-			switch (display_data->id) {
-			case BLOCK_PAGE:
-				display_data->show = false;
-				break;
-			case NODE_PAGE:
-				display_data->name = "Nodes";
-				break;
-			default:
-				break;
-			}
-		}
-	}
-
 	/* set up menu */
 	ui_description = _get_ui_description();
 	gtk_ui_manager_remove_ui(g_ui_manager, g_menu_id);
@@ -1219,7 +1161,6 @@ extern void _change_cluster_main(GtkComboBox *combo, gpointer extra)
 	xfree(ui_description);
 
 	/* make changes for each object */
-	cluster_change_block();
 	cluster_change_front_end();
 	cluster_change_resv();
 	cluster_change_part();
@@ -1232,8 +1173,6 @@ extern void _change_cluster_main(GtkComboBox *combo, gpointer extra)
 		FREE_NULL_LIST(grid_button_list);
 		got_grid = 1;
 	}
-
-	select_g_ba_fini();
 
 	/* sorry popups can't survive a cluster change */
 	if (popup_list)

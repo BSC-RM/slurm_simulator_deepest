@@ -6,11 +6,11 @@
  *  Written by Morris Jette <jette1@llnl.gov> et. al.
  *  CODE-OCEC-09-009. All rights reserved.
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -26,13 +26,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -64,14 +64,14 @@
  * plugin_type - a string suggesting the type of the plugin or its
  * applicability to a particular form of data or method of data handling.
  * If the low-level plugin API is used, the contents of this string are
- * unimportant and may be anything.  SLURM uses the higher-level plugin
+ * unimportant and may be anything.  Slurm uses the higher-level plugin
  * interface which requires this string to be of the form
  *
  *	<application>/<method>
  *
  * where <application> is a description of the intended application of
- * the plugin (e.g., "jobcomp" for SLURM job completion logging) and <method>
- * is a description of how this plugin satisfies that application.  SLURM will
+ * the plugin (e.g., "jobcomp" for Slurm job completion logging) and <method>
+ * is a description of how this plugin satisfies that application.  Slurm will
  * only load job completion logging plugins if the plugin_type string has a
  * prefix of "jobcomp/".
  *
@@ -87,20 +87,6 @@ const uint32_t plugin_version	= SLURM_VERSION_NUMBER;
 		"WorkDir=%s ReservationName=%s Gres=%s Account=%s QOS=%s "\
 		"WcKey=%s Cluster=%s SubmitTime=%s EligibleTime=%s%s%s "\
 		"DerivedExitCode=%s ExitCode=%s %s\n"
-
-/* Type for error string table entries */
-typedef struct {
-	int xe_number;
-	char *xe_message;
-} slurm_errtab_t;
-
-static slurm_errtab_t slurm_errtab[] = {
-	{0, "No error"},
-	{-1, "Unspecified error"}
-};
-
-/* A plugin-global errno. */
-static int plugin_errno = SLURM_SUCCESS;
 
 /* File descriptor used for logging */
 static pthread_mutex_t  file_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -140,24 +126,6 @@ _get_group_name(uint32_t group_id, char *group_name, int buf_size)
 }
 
 /*
- * Linear search through table of errno values and strings,
- * returns NULL on error, string on success.
- */
-static char *_lookup_slurm_api_errtab(int errnum)
-{
-	char *res = NULL;
-	int i;
-
-	for (i = 0; i < sizeof(slurm_errtab) / sizeof(slurm_errtab_t); i++) {
-		if (slurm_errtab[i].xe_number == errnum) {
-			res = slurm_errtab[i].xe_message;
-			break;
-		}
-	}
-	return res;
-}
-
-/*
  * init() is called when the plugin is loaded, before any other functions
  * are called.  Put global initialization here.
  */
@@ -175,7 +143,7 @@ int fini ( void )
 }
 
 /*
- * The remainder of this file implements the standard SLURM job completion
+ * The remainder of this file implements the standard Slurm job completion
  * logging API.
  */
 
@@ -184,7 +152,6 @@ extern int slurm_jobcomp_set_location ( char * location )
 	int rc = SLURM_SUCCESS;
 
 	if (location == NULL) {
-		plugin_errno = EACCES;
 		return SLURM_ERROR;
 	}
 	xfree(log_name);
@@ -196,7 +163,6 @@ extern int slurm_jobcomp_set_location ( char * location )
 	job_comp_fd = open(location, O_WRONLY | O_CREAT | O_APPEND, 0644);
 	if (job_comp_fd == -1) {
 		fatal("open %s: %m", location);
-		plugin_errno = errno;
 		rc = SLURM_ERROR;
 	} else
 		fchmod(job_comp_fd, 0644);
@@ -217,7 +183,7 @@ static void _make_time_str (time_t *time, char *string, int size)
 #if USE_ISO8601
 		/* Format YYYY-MM-DDTHH:MM:SS, ISO8601 standard format,
 		 * NOTE: This is expected to break Maui, Moab and LSF
-		 * schedulers management of SLURM. */
+		 * schedulers management of Slurm. */
 		snprintf(string, size,
 			"%4.4u-%2.2u-%2.2uT%2.2u:%2.2u:%2.2u",
 			(time_tm.tm_year + 1900), (time_tm.tm_mon+1),
@@ -402,7 +368,6 @@ extern int slurm_jobcomp_log_record ( struct job_record *job_ptr )
 			if (errno == EAGAIN)
 				continue;
 			else {
-				plugin_errno = errno;
 				rc = SLURM_ERROR;
 				break;
 			}
@@ -413,17 +378,6 @@ extern int slurm_jobcomp_log_record ( struct job_record *job_ptr )
 	xfree(exit_code_str);
 	slurm_mutex_unlock( &file_lock );
 	return rc;
-}
-
-extern int slurm_jobcomp_get_errno( void )
-{
-	return plugin_errno;
-}
-
-extern char *slurm_jobcomp_strerror( int errnum )
-{
-	char *res = _lookup_slurm_api_errtab(errnum);
-	return (res ? res : strerror(errnum));
 }
 
 /*

@@ -7,11 +7,11 @@
  *  Written by Morris Jette <jette1@llnl.gov>.
  *  CODE-OCEC-09-009. All rights reserved.
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -27,13 +27,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -94,15 +94,6 @@ extern int  switch_g_restore(char *dir_name, bool recover);
  */
 extern int  switch_g_clear(void);
 
-/* return the number of a switch-specific error code */
-extern int switch_g_get_errno(void);
-
-/* return a string description of a switch specific error code
- * IN errnum - switch specific error return code
- * RET       - string describing the nature of the error
- */
-extern char *switch_g_strerror(int errnum);
-
 /******************************************************\
  * JOB-SPECIFIC SWITCH CREDENTIAL MANAGEMENT FUNCIONS *
 \******************************************************/
@@ -127,6 +118,15 @@ extern int  switch_g_alloc_jobinfo (dynamic_plugin_data_t **jobinfo,
 extern int  switch_g_build_jobinfo(dynamic_plugin_data_t *jobinfo,
 				   slurm_step_layout_t *step_layout,
 				   char *network);
+
+/* duplicate a job's switch credential
+ * IN  source  - storage for a switch job credential
+ * OUT dest    - pointer to NULL at beginning, will point to storage for
+ *               duplicated switch job credential
+ * NOTE: storage must be freed using g_switch_g_free_jobinfo
+ */
+extern int  switch_g_duplicate_jobinfo(dynamic_plugin_data_t *source,
+				       dynamic_plugin_data_t **dest);
 
 /* free storage previously allocated for a switch job credential
  * IN jobinfo  - the switch job credential to be freed

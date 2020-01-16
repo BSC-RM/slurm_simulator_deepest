@@ -7,11 +7,11 @@
  *  Written by Morris Jette <jette1@llnl.gov>
  *  CODE-OCEC-09-009. All rights reserved.
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -27,13 +27,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -46,19 +46,19 @@
 
 #include "src/common/list.h"
 
-#define DEFAULT_SLURMDBD_AUTHTYPE	"auth/none"
+#define DEFAULT_SLURMDBD_AUTHTYPE	"auth/munge"
 //#define DEFAULT_SLURMDBD_JOB_PURGE	12
 #define DEFAULT_SLURMDBD_PIDFILE	"/var/run/slurmdbd.pid"
 #define DEFAULT_SLURMDBD_ARCHIVE_DIR	"/tmp"
 //#define DEFAULT_SLURMDBD_STEP_PURGE	1
 
 /* SlurmDBD configuration parameters */
-typedef struct slurm_dbd_conf {
+typedef struct {
 	time_t		last_update;	/* time slurmdbd.conf read	*/
-	char *		archive_dir;    /* location to localy
-					 * store data if not
-					 * using a script               */
+	char *		archive_dir;    /* location to locally store
+					 * data if not using a script   */
 	char *		archive_script;	/* script to archive old data	*/
+	char *		auth_alt_types;	/* alt authentication plugins	*/
 	char *		auth_info;	/* authentication info		*/
 	char *		auth_type;	/* authentication mechanism	*/
 	uint16_t        commit_delay;   /* On busy systems delay
@@ -77,6 +77,11 @@ typedef struct slurm_dbd_conf {
 	uint16_t        log_fmt;        /* Log file timestamt format    */
 	uint32_t	max_time_range;	/* max time range for user queries */
 	uint16_t        msg_timeout;    /* message timeout		*/
+	char *		parameters;	/* parameters to change behavior with
+					 * the slurmdbd directly	*/
+	uint16_t        persist_conn_rc_flags; /* flags to be sent back on any
+						* persist connection init
+						*/
 	char *		pid_file;	/* where to store current PID	*/
 	char *		plugindir;	/* dir to look for plugins	*/
 	uint16_t        private_data;   /* restrict information         */
@@ -107,10 +112,10 @@ typedef struct slurm_dbd_conf {
 	uint16_t        track_ctld;     /* Whether or not track when a
 					 * slurmctld goes down or not   */
 	uint16_t        tcp_timeout;    /* tcp timeout			*/
-} slurm_dbd_conf_t;
+} slurmdbd_conf_t;
 
 extern pthread_mutex_t conf_mutex;
-extern slurm_dbd_conf_t *slurmdbd_conf;
+extern slurmdbd_conf_t *slurmdbd_conf;
 
 
 /*

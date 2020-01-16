@@ -8,22 +8,22 @@
  *  Written by Morris Jette <jette@llnl.gov>
  *  CODE-OCEC-09-009. All rights reserved.
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -441,14 +441,14 @@ need_refresh:
 		treeview = create_treeview_2cols_attach_to_table(
 			popup_win->table);
 		spec_info->display_widget =
-			gtk_widget_ref(GTK_WIDGET(treeview));
+			g_object_ref(GTK_WIDGET(treeview));
 	} else {
 		treeview = GTK_TREE_VIEW(spec_info->display_widget);
 		update = 1;
 	}
 
 	itr = list_iterator_create(info_list);
-	while ((sview_fe_info = (sview_front_end_info_t*) list_next(itr))) {
+	while ((sview_fe_info = list_next(itr))) {
 		front_end_ptr = sview_fe_info->front_end_ptr;
 		if (xstrcmp(front_end_ptr->name, name) == 0) {
 			j = 0;
@@ -654,7 +654,7 @@ extern void get_info_front_end(GtkTable *table, display_data_t *display_data)
 		label = gtk_label_new("Not available in a federated view");
 		gtk_table_attach_defaults(GTK_TABLE(table), label, 0, 1, 0, 1);
 		gtk_widget_show(label);
-		display_widget = gtk_widget_ref(label);
+		display_widget = g_object_ref(label);
 		goto end_it;
 	}
 
@@ -678,7 +678,7 @@ extern void get_info_front_end(GtkTable *table, display_data_t *display_data)
 		label = gtk_label_new(error_char);
 		gtk_table_attach_defaults(table, label, 0, 1, 0, 1);
 		gtk_widget_show(label);
-		display_widget = gtk_widget_ref(GTK_WIDGET(label));
+		display_widget = g_object_ref(GTK_WIDGET(label));
 		goto end_it;
 	}
 
@@ -730,7 +730,7 @@ display_it:
 		gtk_tree_selection_set_mode(
 			gtk_tree_view_get_selection(tree_view),
 			GTK_SELECTION_MULTIPLE);
-		display_widget = gtk_widget_ref(GTK_WIDGET(tree_view));
+		display_widget = g_object_ref(GTK_WIDGET(tree_view));
 		gtk_table_attach_defaults(table,
 					  GTK_WIDGET(tree_view),
 					  0, 1, 0, 1);
@@ -798,7 +798,7 @@ extern void specific_info_front_end(popup_info_t *popup_win)
 					  label,
 					  0, 1, 0, 1);
 		gtk_widget_show(label);
-		spec_info->display_widget = gtk_widget_ref(label);
+		spec_info->display_widget = g_object_ref(label);
 		goto end_it;
 	}
 
@@ -820,7 +820,7 @@ display_it:
 			gtk_tree_view_get_selection(tree_view),
 			GTK_SELECTION_MULTIPLE);
 		spec_info->display_widget =
-			gtk_widget_ref(GTK_WIDGET(tree_view));
+			g_object_ref(GTK_WIDGET(tree_view));
 		gtk_table_attach_defaults(popup_win->table,
 					  GTK_WIDGET(tree_view),
 					  0, 1, 0, 1);
@@ -849,7 +849,6 @@ display_it:
 		front_end_ptr = sview_front_end_info_ptr->front_end_ptr;
 		switch (spec_info->type) {
 		case PART_PAGE:
-		case BLOCK_PAGE:
 		case NODE_PAGE:
 			break;
 		case JOB_PAGE:
@@ -1147,32 +1146,5 @@ end_it:
 
 extern void cluster_change_front_end(void)
 {
-	display_data_t *display_data = display_data_front_end;
-
-	display_data = options_data_front_end;
-	while (display_data++) {
-		if (display_data->id == -1)
-			break;
-
-		if (cluster_flags & CLUSTER_FLAG_BG) {
-			switch (display_data->id) {
-			case BLOCK_PAGE:
-				display_data->name = "Blocks";
-				break;
-			case NODE_PAGE:
-				display_data->name = "Midplanes";
-				break;
-			}
-		} else {
-			switch (display_data->id) {
-			case BLOCK_PAGE:
-				display_data->name = NULL;
-				break;
-			case NODE_PAGE:
-				display_data->name = "Nodes";
-				break;
-			}
-		}
-	}
 	get_info_front_end(NULL, NULL);
 }

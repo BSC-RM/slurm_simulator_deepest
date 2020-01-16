@@ -6,11 +6,11 @@
  *****************************************************************************
  *  Copyright (C) 2016-2017 SchedMD LLC.
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -26,13 +26,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -523,7 +523,7 @@ int main(int argc, char *argv[])
 	_read_config();
 	log_opts.stderr_level = LOG_LEVEL_QUIET;
 	log_opts.syslog_level = LOG_LEVEL_QUIET;
-	if (slurm_get_debug_flags() && DEBUG_FLAG_NODE_FEATURES)
+	if (slurm_get_debug_flags() & DEBUG_FLAG_NODE_FEATURES)
 		log_opts.logfile_level = LOG_LEVEL_DEBUG;
 	else
 		log_opts.logfile_level = LOG_LEVEL_ERROR;

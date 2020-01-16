@@ -6,11 +6,11 @@
  *  Written by Christopher J. Morrone <morrone2@llnl.gov>.
  *  CODE-OCEC-09-009. All rights reserved.
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -26,13 +26,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -94,6 +94,7 @@ static int _signal_batch_script_step(const resource_allocation_response_msg_t
 		      allocation->node_list);
 		return -1;
 	}
+	memset(&rpc, 0, sizeof(rpc));
 	rpc.job_id = allocation->job_id;
 	rpc.job_step_id = SLURM_BATCH_SCRIPT;
 	rpc.signal = signal;
@@ -125,9 +126,11 @@ static int _signal_job_step(const job_step_info_t *step,
 	int rc = SLURM_SUCCESS;
 
 	/* same remote procedure call for each node */
+	memset(&rpc, 0, sizeof(rpc));
 	rpc.job_id = step->job_id;
 	rpc.job_step_id = step->step_id;
-	rpc.signal = (uint32_t)signal;
+	rpc.signal = signal;
+
 	rc = _local_send_recv_rc_msgs(allocation->node_list,
 				      REQUEST_SIGNAL_TASKS, &rpc);
 	return rc;
@@ -148,6 +151,7 @@ static int _terminate_batch_script_step(const resource_allocation_response_msg_t
 		return -1;
 	}
 
+	memset(&rpc, 0, sizeof(rpc));
 	rpc.job_id = allocation->job_id;
 	rpc.job_step_id = SLURM_BATCH_SCRIPT;
 	rpc.signal = (uint16_t)-1; /* not used by slurmd */
@@ -187,6 +191,7 @@ static int _terminate_job_step(const job_step_info_t *step,
 	/*
 	 *  Send REQUEST_TERMINATE_TASKS to all nodes of the step
 	 */
+	memset(&rpc, 0, sizeof(rpc));
 	rpc.job_id = step->job_id;
 	rpc.job_step_id = step->step_id;
 	rpc.signal = (uint16_t)-1; /* not used by slurmd */
@@ -204,7 +209,7 @@ static int _terminate_job_step(const job_step_info_t *step,
  * slurm_signal_job - send the specified signal to all steps of an existing job
  * IN job_id     - the job's id
  * IN signal     - signal number
- * RET 0 on success, otherwise return -1 and set errno to indicate the error
+ * RET SLURM_SUCCESS on success, otherwise return SLURM_ERROR with errno set
  */
 extern int
 slurm_signal_job (uint32_t job_id, uint16_t signal)
@@ -219,8 +224,9 @@ slurm_signal_job (uint32_t job_id, uint16_t signal)
 	}
 
 	/* same remote procedure call for each node */
+	memset(&rpc, 0, sizeof(rpc));
 	rpc.job_id = job_id;
-	rpc.signal = (uint32_t)signal;
+	rpc.signal = signal;
 	rpc.flags = KILL_STEPS_ONLY;
 
 	rc = _local_send_recv_rc_msgs(alloc_info->node_list,
@@ -240,7 +246,7 @@ fail1:
  * IN step_id - the job step's id - use SLURM_BATCH_SCRIPT as the step_id
  *              to send a signal to a job's batch script
  * IN signal  - signal number
- * RET 0 on success, otherwise return -1 and set errno to indicate the error
+ * RET SLURM_SUCCESS on success, otherwise return SLURM_ERROR with errno set
  */
 extern int
 slurm_signal_job_step (uint32_t job_id, uint32_t step_id, uint32_t signal)
@@ -298,7 +304,7 @@ fail:
  * IN job_id  - the job's id
  * IN step_id - the job step's id - use SLURM_BATCH_SCRIPT as the step_id
  *              to terminate a job's batch script
- * RET 0 on success, otherwise return -1 and set errno to indicate the error
+ * RET SLURM_SUCCESS on success, otherwise return SLURM_ERROR with errno set
  */
 extern int
 slurm_terminate_job_step (uint32_t job_id, uint32_t step_id)
@@ -367,6 +373,7 @@ extern int slurm_notify_job (uint32_t job_id, char *message)
 	/*
 	 * Request message:
 	 */
+	memset(&req, 0, sizeof(req));
 	req.job_id      = job_id;
 	req.job_step_id = NO_VAL;	/* currently not used */
 	req.message     = message;
@@ -375,13 +382,12 @@ extern int slurm_notify_job (uint32_t job_id, char *message)
 
 	if (slurm_send_recv_controller_rc_msg(&msg, &rc,
 					      working_cluster_rec) < 0)
-		return SLURM_FAILURE;
+		return SLURM_ERROR;
 
 	if (rc) {
 		slurm_seterrno_ret(rc);
-		return SLURM_FAILURE;
+		return SLURM_ERROR;
 	}
 
 	return SLURM_SUCCESS;
 }
-

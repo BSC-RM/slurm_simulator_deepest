@@ -5,11 +5,11 @@
  *  Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
  *  CODE-OCEC-09-009. All rights reserved.
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -25,13 +25,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -40,14 +40,14 @@
 
 #include <config.h>
 
-#ifndef   _GNU_SOURCE
-#  define _GNU_SOURCE
-#endif
+#define _GNU_SOURCE
 
 #include <getopt.h>
 
 #include "src/common/job_options.h"
 #include "src/slurmd/slurmstepd/slurmstepd_job.h"
+
+#define SPANK_OPTION_ENV_PREFIX "_SLURM_SPANK_OPTION_"
 
 struct spank_launcher_job_info {
 	uid_t       uid;
@@ -166,4 +166,66 @@ int spank_get_remote_options_env (char **env);
 /*  Clear any spank remote options encoded in environment.
  */
 int spank_clear_remote_options_env (char **env);
+
+/*
+ * spank_get_plugin_names
+ * Get names of all spank plugins
+ *
+ * Parameters:
+ *   names IN/OUT: pointer to char ** (should be NULL when called)
+ *                 output of function is allocated memory for the
+ *                 array of string pointers, and allocated memory
+ *                 for the strings.  Array will be NULL terminated.
+ *                 Caller should manage the memory.
+ * Returns:
+ *   number of allocated strings (excluding NULL terminator)
+ */
+size_t spank_get_plugin_names(char ***names);
+
+/*
+ * spank_get_plugin_option_names
+ * Get names of all spank plugins
+ *
+ * Parameters:
+ * IN plugin_name	- Name of spank plugin being considered
+ *			  (e.g., from spank_get_plugin_names)
+ * IN/OUT opts		- Pointer to char ** (should be NULL when called)
+ *			  output of function is allocated memory for the array
+ *			  of string pointers, and allocated memory for the
+ *			  strings. Array will be NULL terminated. Caller
+ *			  should manage the memory.
+ * Returns:
+ *			- Number of allocated strings (excluding NULL
+ *			  terminator)
+ */
+size_t spank_get_plugin_option_names(const char *plugin_name, char ***opts);
+
+/*
+ * Get option value by common option name
+ */
+extern char *spank_option_get(char *optname);
+
+/*
+ * Get plugin name by common option name
+ */
+extern char *spank_option_plugin(char *optname);
+
+/*
+ * Is option set? Discover by common option name
+ */
+extern bool spank_option_isset(char *optname);
+
+/*
+ * Function for iterating through all the common option data structure
+ * and returning (via parameter arguments) the name and value of each
+ * set slurm option.
+ *
+ * OUT plugin	- pointer to string to store the plugin name
+ * OUT name	- pointer to string to store the option name
+ * OUT value	- pointer to string to store the value
+ * IN/OUT state	- internal state, should point to NULL for the first call
+ * RETURNS	- true if plugin/name/value set; false if no more options
+ */
+extern bool spank_option_get_next_set(char **plugin, char **name,
+				      char **value, void **state);
 #endif /* !_PLUGSTACK_H */

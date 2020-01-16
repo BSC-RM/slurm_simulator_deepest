@@ -4,11 +4,11 @@
  *  Copyright (C) 2015, Brigham Young University
  *  Author:  Ryan Cox <ryan_cox@byu.edu>
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -24,13 +24,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -65,8 +65,7 @@
 #include "slurm/slurm.h"
 #include "src/common/slurm_xlator.h"
 #include "src/common/slurm_protocol_api.h"
-#include "src/common/xcgroup_read_config.c"
-#include "src/slurmd/common/xcgroup.c"
+#include "src/common/xcgroup_read_config.h"
 
 /* This definition would probably be good to centralize somewhere */
 #ifndef MAXHOSTNAMELEN
@@ -94,6 +93,7 @@ static struct {
 	log_level_t log_level;
 	char *node_name;
 	bool disable_x11;
+	char *pam_service;
 } opts;
 
 static void _init_opts(void)
@@ -107,6 +107,7 @@ static void _init_opts(void)
 	opts.log_level = LOG_LEVEL_INFO;
 	opts.node_name = NULL;
 	opts.disable_x11 = false;
+	opts.pam_service = NULL;
 }
 
 /* Adopts a process into the given step. Returns SLURM_SUCCESS if
@@ -134,15 +135,32 @@ static int _adopt_process(pam_handle_t *pamh, pid_t pid, step_loc_t *stepd)
 
 	rc = stepd_add_extern_pid(fd, stepd->protocol_version, pid);
 
+	if (rc == PAM_SUCCESS) {
+		char *env;
+		env = xstrdup_printf("SLURM_JOB_ID=%u", stepd->jobid);
+		pam_putenv(pamh, env);
+		xfree(env);
+	}
+
 	if ((rc == PAM_SUCCESS) && !opts.disable_x11) {
 		int display;
-		display = stepd_get_x11_display(fd, stepd->protocol_version);
+		char *xauthority;
+		display = stepd_get_x11_display(fd, stepd->protocol_version,
+						&xauthority);
 
 		if (display) {
 			char *env;
 			env = xstrdup_printf("DISPLAY=localhost:%d.0", display);
 			pam_putenv(pamh, env);
 			xfree(env);
+		}
+
+		if (xauthority) {
+			char *env;
+			env = xstrdup_printf("XAUTHORITY=%s", xauthority);
+			pam_putenv(pamh, env);
+			xfree(env);
+			xfree(xauthority);
 		}
 	}
 
@@ -199,7 +217,7 @@ static time_t _cgroup_creation_time(char *uidcg, uint32_t job_id)
 	}
 
 	if (stat(path, &statbuf) != 0) {
-		info("Couldn't stat path '%s'", path);
+		info("Couldn't stat path '%s': %m", path);
 		return 0;
 	}
 
@@ -215,6 +233,7 @@ static int _indeterminate_multiple(pam_handle_t *pamh, List steps, uid_t uid,
 	time_t most_recent = 0, cgroup_time = 0;
 	char uidcg[PATH_MAX];
 	char *cgroup_suffix = "";
+	slurm_cgroup_conf_t *cg_conf;
 
 	if (opts.action_unknown == CALLERID_ACTION_DENY) {
 		debug("Denying due to action_unknown=deny");
@@ -228,11 +247,15 @@ static int _indeterminate_multiple(pam_handle_t *pamh, List steps, uid_t uid,
 	if (opts.node_name)
 		cgroup_suffix = xstrdup_printf("_%s", opts.node_name);
 
+	/* read cgroup configuration */
+	slurm_mutex_lock(&xcgroup_config_read_mutex);
+	cg_conf = xcgroup_get_slurm_cgroup_conf();
+
 	if (snprintf(uidcg, PATH_MAX, "%s/memory/slurm%s/uid_%u",
-		     slurm_cgroup_conf->cgroup_mountpoint, cgroup_suffix, uid)
+		     cg_conf->cgroup_mountpoint, cgroup_suffix, uid)
 	    >= PATH_MAX) {
 		info("snprintf: '%s/memory/slurm%s/uid_%u' longer than PATH_MAX of %d",
-		     slurm_cgroup_conf->cgroup_mountpoint, cgroup_suffix,
+		     cg_conf->cgroup_mountpoint, cgroup_suffix,
 		     uid, PATH_MAX);
 		/* Make the uidcg an empty string. This will effectively switch
 		 * to a (somewhat) random selection of job rather than picking
@@ -240,6 +263,7 @@ static int _indeterminate_multiple(pam_handle_t *pamh, List steps, uid_t uid,
 		 */
 		uidcg[0] = '\0';
 	}
+	slurm_mutex_unlock(&xcgroup_config_read_mutex);
 
 	if (opts.node_name)
 		xfree(cgroup_suffix);
@@ -344,6 +368,7 @@ static int _rpc_network_callerid(struct callerid_conn *conn, char *user_name,
 	char ip_src_str[INET6_ADDRSTRLEN];
 	char node_name[MAXHOSTNAMELEN];
 
+	memset(&req, 0, sizeof(req));
 	memcpy((void *)&req.ip_src, (void *)&conn->ip_src, 16);
 	memcpy((void *)&req.ip_dst, (void *)&conn->ip_dst, 16);
 	req.port_src = conn->port_src;
@@ -357,13 +382,13 @@ static int _rpc_network_callerid(struct callerid_conn *conn, char *user_name,
 		      ip_src_str,
 		      req.port_src,
 		      user_name);
-		return SLURM_FAILURE;
+		return SLURM_ERROR;
 	} else if (*job_id == NO_VAL) {
 		debug("From %s port %d as %s: job indeterminate",
 		      ip_src_str,
 		      req.port_src,
 		      user_name);
-		return SLURM_FAILURE;
+		return SLURM_ERROR;
 	} else {
 		info("From %s port %d as %s: member of job %u",
 		     ip_src_str,
@@ -412,7 +437,7 @@ static int _try_rpc(pam_handle_t *pamh, struct passwd *pwd)
 	rc = _rpc_network_callerid(&conn, pwd->pw_name, &job_id);
 	if (rc == SLURM_SUCCESS) {
 		step_loc_t stepd;
-		memset(&stepd, 0, sizeof(step_loc_t));
+		memset(&stepd, 0, sizeof(stepd));
 		/* We only need the jobid and stepid filled in here
 		   all the rest isn't needed for the adopt.
 		*/
@@ -468,8 +493,6 @@ log_level_t _parse_log_level(pam_handle_t *pamh, const char *log_level_str)
 			u = LOG_LEVEL_DEBUG4;
 		else if(!strcasecmp(log_level_str, "debug5"))
 			u = LOG_LEVEL_DEBUG5;
-		else if(!strcasecmp(log_level_str, "sched"))
-			u = LOG_LEVEL_SCHED;
 		else {
 			pam_syslog(pamh,
 				   LOG_ERR,
@@ -544,6 +567,20 @@ static void _parse_opts(pam_handle_t *pamh, int argc, const char **argv)
 					   "unrecognized action_generic_failure=%s, setting to 'allow'",
 					   v);
 			}
+		} else if (!xstrncasecmp(*argv, "action_adopt_failure=", 21)) {
+			v = (char *)(21 + *argv);
+			if (!xstrncasecmp(v, "allow", 5))
+				opts.action_adopt_failure =
+					CALLERID_ACTION_ALLOW;
+			else if (!xstrncasecmp(v, "deny", 4))
+				opts.action_adopt_failure =
+					CALLERID_ACTION_DENY;
+			else {
+				pam_syslog(pamh,
+					   LOG_ERR,
+					   "unrecognized action_adopt_failure=%s, setting to 'allow'",
+					   v);
+			}
 		} else if (!xstrncasecmp(*argv, "log_level=", 10)) {
 			v = (char *)(10 + *argv);
 			opts.log_level = _parse_log_level(pamh, v);
@@ -552,6 +589,9 @@ static void _parse_opts(pam_handle_t *pamh, int argc, const char **argv)
 			opts.node_name = xstrdup(v);
 		} else if (!xstrncasecmp(*argv, "disable_x11=1", 13)) {
 			opts.disable_x11 = true;
+		} else if (!xstrncasecmp(*argv, "service=", 8)) {
+			v = (char *)(8 + *argv);
+			opts.pam_service = xstrdup(v);
 		}
 	}
 
@@ -566,17 +606,39 @@ static void _log_init(log_level_t level)
 	log_init(PAM_MODULE_NAME, logopts, LOG_AUTHPRIV, NULL);
 }
 
-static int _load_cgroup_config()
+/* Make sure to only continue if we're running in the sshd context
+ *
+ * If this module is used locally e.g. via sudo then unexpected things might
+ * happen (e.g. passing environment variables interpreted by slurm code like
+ * SLURM_CONF or inheriting file descriptors that are used by _try_rpc()).
+ */
+static int check_pam_service(pam_handle_t *pamh)
 {
-	slurm_cgroup_conf = xmalloc(sizeof(slurm_cgroup_conf_t));
-	memset(slurm_cgroup_conf, 0, sizeof(slurm_cgroup_conf_t));
-	if (read_slurm_cgroup_conf(slurm_cgroup_conf) != SLURM_SUCCESS) {
-		info("read_slurm_cgroup_conf failed");
-		return SLURM_FAILURE;
-	}
-	return SLURM_SUCCESS;
-}
+	const char *allowed = opts.pam_service ? opts.pam_service : "sshd";
+	char *service = NULL;
+	int rc;
 
+	if (!xstrcmp(allowed, "*"))
+		// any service name is allowed
+		return PAM_SUCCESS;
+
+	rc = pam_get_item(pamh, PAM_SERVICE, (void*)&service);
+
+	if (rc != PAM_SUCCESS) {
+		pam_syslog(pamh, LOG_ERR, "failed to obtain PAM_SERVICE name");
+		return rc;
+	} else if (!service) {
+		// this shouldn't actually happen
+		return PAM_BAD_ITEM;
+	}
+
+	if (!xstrcmp(service, allowed)) {
+		return PAM_SUCCESS;
+	}
+
+	pam_syslog(pamh, LOG_INFO, "Not adopting process since this is not an allowed pam service");
+	return PAM_IGNORE;
+}
 
 /* Parse arguments, etc then get my socket address/port information. Attempt to
  * adopt this process into a job in the following order:
@@ -598,6 +660,12 @@ PAM_EXTERN int pam_sm_acct_mgmt(pam_handle_t *pamh, int flags
 
 	_init_opts();
 	_parse_opts(pamh, argc, argv);
+
+	retval = check_pam_service(pamh);
+	if (retval != PAM_SUCCESS) {
+		return retval;
+	}
+
 	_log_init(opts.log_level);
 
 	switch (opts.action_generic_failure) {
@@ -639,17 +707,6 @@ PAM_EXTERN int pam_sm_acct_mgmt(pam_handle_t *pamh, int flags
 		opts.ignore_root = 1;
 	}
 
-	/* Ignoring root is probably best but the admin can allow it */
-	if (!strcmp(user_name, "root")) {
-		if (opts.ignore_root) {
-			info("Ignoring root user");
-			return PAM_IGNORE;
-		} else {
-			/* This administrator is crazy */
-			info("Danger!!! This is a connection attempt by root and ignore_root=0 is set! Hope for the best!");
-		}
-	}
-
 	/* Calculate buffer size for getpwnam_r */
 	bufsize = sysconf(_SC_GETPW_R_SIZE_MAX);
 	if (bufsize == -1)
@@ -669,15 +726,26 @@ PAM_EXTERN int pam_sm_acct_mgmt(pam_handle_t *pamh, int flags
 		return PAM_SESSION_ERR;
 	}
 
-	if (_load_cgroup_config() != SLURM_SUCCESS)
-		return rc;
+	/* Ignoring root is probably best but the admin can allow it */
+	if (pwd.pw_uid == 0) {
+		if (opts.ignore_root) {
+			info("Ignoring root user");
+			return PAM_IGNORE;
+		} else {
+			/* This administrator is crazy */
+			info("Danger!!! This is a connection attempt by root (user id 0) and ignore_root=0 is set! Hope for the best!");
+		}
+	}
 
-	/* Check if there are any steps on the node from any user. A failure here
+	/*
+	 * Check if there are any steps on the node from any user. A failure here
 	 * likely means failures everywhere so exit on failure or if no local jobs
-	 * exist. */
+	 * exist. This can also happen if SlurmdSpoolDir cannot be found, or if
+	 * the NodeName cannot be established for some reason.
+	 */
 	steps = stepd_available(NULL, opts.node_name);
 	if (!steps) {
-		error("Error obtaining local step information.");
+		send_user_msg(pamh, "No Slurm jobs found on node.");
 		goto cleanup;
 	}
 
@@ -710,8 +778,12 @@ PAM_EXTERN int pam_sm_acct_mgmt(pam_handle_t *pamh, int flags
 			    (opts.action_adopt_failure ==
 			     CALLERID_ACTION_ALLOW))
 				rc = PAM_SUCCESS;
-			else
+			else {
+				send_user_msg(pamh, "Access denied by "
+					      PAM_MODULE_NAME
+					      ": failed to adopt process into cgroup, denying access because action_adopt_failure=deny");
 				rc = PAM_PERM_DENIED;
+			}
 			goto cleanup;
 		}
 	} else {
@@ -732,8 +804,9 @@ PAM_EXTERN int pam_sm_acct_mgmt(pam_handle_t *pamh, int flags
 cleanup:
 	FREE_NULL_LIST(steps);
 	xfree(buf);
-	xfree(slurm_cgroup_conf);
 	xfree(opts.node_name);
+	xfree(opts.pam_service);
+	xcgroup_fini_slurm_cgroup_conf();
 	return rc;
 }
 

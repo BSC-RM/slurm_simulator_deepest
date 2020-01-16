@@ -1,5 +1,5 @@
 /*****************************************************************************\
- *  src/slurmd/slurmstepd/slurmstepd.c - SLURM job-step manager.
+ *  src/slurmd/slurmstepd/slurmstepd.c - Slurm job-step manager.
  *****************************************************************************
  *  Copyright (C) 2002-2007 The Regents of the University of California.
  *  Copyright (C) 2008-2009 Lawrence Livermore National Security.
@@ -8,11 +8,11 @@
  *  and Christopher Morrone <morrone2@llnl.gov>.
  *  CODE-OCEC-09-009. All rights reserved.
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -28,13 +28,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -45,6 +45,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
+#include "src/common/assoc_mgr.h"
 #include "src/common/cpu_frequency.h"
 #include "src/common/gres.h"
 #include "src/common/node_select.h"
@@ -57,6 +58,7 @@
 #include "src/common/slurm_rlimits_info.h"
 #include "src/common/stepd_api.h"
 #include "src/common/switch.h"
+#include "src/common/xcgroup_read_config.h"
 #include "src/common/xmalloc.h"
 #include "src/common/xsignal.h"
 #include "src/common/xstring.h"
@@ -65,6 +67,7 @@
 #include "src/slurmd/common/slurmstepd_init.h"
 #include "src/slurmd/common/setproctitle.h"
 #include "src/slurmd/common/proctrack.h"
+#include "src/slurmd/common/xcpuinfo.h"
 #include "src/slurmd/slurmd/slurmd.h"
 #include "src/slurmd/slurmstepd/mgr.h"
 #include "src/slurmd/slurmstepd/req.h"
@@ -85,8 +88,13 @@ static void _step_cleanup(stepd_step_rec_t *job, slurm_msg_t *msg, int rc);
 #endif
 static int _process_cmdline (int argc, char **argv);
 
+/*
+ *  List of signals to block in this process
+ */
 int slurmstepd_blocked_signals[] = {
-	SIGPIPE, 0
+	SIGINT,  SIGTERM, SIGTSTP,
+	SIGQUIT, SIGPIPE, SIGUSR1,
+	SIGUSR2, SIGALRM, SIGHUP, 0
 };
 
 /* global variable */
@@ -96,6 +104,7 @@ extern char  ** environ;
 int
 main (int argc, char **argv)
 {
+	log_options_t lopts = LOG_OPTS_INITIALIZER;
 	slurm_addr_t *cli;
 	slurm_addr_t *self;
 	slurm_msg_t *msg;
@@ -111,6 +120,9 @@ main (int argc, char **argv)
 	conf->argv = &argv;
 	conf->argc = &argc;
 	init_setproctitle(argc, argv);
+
+	log_init(argv[0], lopts, LOG_DAEMON, NULL);
+
 	if (slurm_select_init(1) != SLURM_SUCCESS )
 		fatal( "failed to initialize node selection plugin" );
 	if (slurm_auth_init(NULL) != SLURM_SUCCESS)
@@ -123,7 +135,7 @@ main (int argc, char **argv)
 	 * launch_tasks_request_msg_t or a batch_job_launch_msg_t */
 	if (!(job = _step_setup(cli, self, msg))) {
 		_send_fail_to_slurmd(STDOUT_FILENO);
-		rc = SLURM_FAILURE;
+		rc = SLURM_ERROR;
 		goto ending;
 	}
 
@@ -135,7 +147,7 @@ main (int argc, char **argv)
 	/* sets job->msg_handle and job->msgid */
 	if (msg_thr_create(job) == SLURM_ERROR) {
 		_send_fail_to_slurmd(STDOUT_FILENO);
-		rc = SLURM_FAILURE;
+		rc = SLURM_ERROR;
 		goto ending;
 	}
 
@@ -185,6 +197,10 @@ extern int stepd_cleanup(slurm_msg_t *msg, stepd_step_rec_t *job,
 	}
 
 	mpi_fini();	/* Remove stale PMI2 sockets */
+
+	if (conf->hwloc_xml)
+		(void)remove(conf->hwloc_xml);
+
 #ifdef MEMORY_LEAK_DEBUG
 	acct_gather_conf_destroy();
 	(void) core_spec_g_fini();
@@ -192,11 +208,14 @@ extern int stepd_cleanup(slurm_msg_t *msg, stepd_step_rec_t *job,
 
 	fini_setproctitle();
 
+	xcgroup_fini_slurm_cgroup_conf();
+
 	xfree(cli);
 	xfree(self);
 	xfree(conf->block_map);
 	xfree(conf->block_map_inv);
 	xfree(conf->hostname);
+	xfree(conf->hwloc_xml);
 	xfree(conf->job_acct_gather_freq);
 	xfree(conf->job_acct_gather_type);
 	xfree(conf->logfile);
@@ -405,7 +424,7 @@ _send_fail_to_slurmd(int sock)
 	/* If running under valgrind/memcheck, this pipe doesn't work correctly
 	 * so just skip it. */
 #if (SLURMSTEPD_MEMCHECK == 0)
-	int fail = SLURM_FAILURE;
+	int fail = SLURM_ERROR;
 
 	if (errno)
 		fail = errno;
@@ -460,16 +479,62 @@ _init_from_slurmd(int sock, char **argv,
 	char *incoming_buffer = NULL;
 	Buf buffer;
 	int step_type;
-	int len, proto;
+	int len;
+	uint16_t proto;
 	slurm_addr_t *cli = NULL;
 	slurm_addr_t *self = NULL;
 	slurm_msg_t *msg = NULL;
 	uint16_t port;
 	char buf[16];
-	log_options_t lopts = LOG_OPTS_INITIALIZER;
 	uint32_t jobid = 0, stepid = 0;
+	List tmp_list = NULL;
+	assoc_mgr_lock_t locks = { .tres = WRITE_LOCK };
 
-	log_init(argv[0], lopts, LOG_DAEMON, NULL);
+	/* receive conf from slurmd */
+	if (!(conf = read_slurmd_conf_lite(sock)))
+		fatal("Failed to read conf from slurmd");
+
+	/*
+	 * LOGGING BEFORE THIS WILL NOT WORK!  Only afterwards will it show
+	 * up in the log.
+	 */
+	log_alter(conf->log_opts, 0, conf->logfile);
+	log_set_timefmt(conf->log_fmt);
+
+	debug2("debug level is %d.", conf->debug_level);
+
+	/* Receive TRES information for slurmd */
+	safe_read(sock, &len, sizeof(int));
+	if (len > 0) {
+		incoming_buffer = xmalloc(len);
+		safe_read(sock, incoming_buffer, len);
+		buffer = create_buf(incoming_buffer, len);
+		slurm_unpack_list(&tmp_list,
+				  slurmdb_unpack_tres_rec,
+				  slurmdb_destroy_tres_rec,
+				  buffer, SLURM_PROTOCOL_VERSION);
+		free_buf(buffer);
+	} else {
+		fatal("%s: We didn't get any tres from slurmd. This should never happen.",
+		      __func__);
+	}
+
+	xassert(tmp_list);
+
+	assoc_mgr_lock(&locks);
+	assoc_mgr_post_tres_list(tmp_list);
+	debug2("%s: slurmd sent %u TRES.", __func__, g_tres_count);
+	/* assoc_mgr_post_tres_list destroys tmp_list */
+	tmp_list = NULL;
+	assoc_mgr_unlock(&locks);
+
+	/* receive cgroup conf from slurmd */
+	if (xcgroup_read_conf(sock) != SLURM_SUCCESS)
+		fatal("Failed to read cgroup conf from slurmd");
+
+	/* receive acct_gather conf from slurmd */
+	if (acct_gather_read_conf(sock) != SLURM_SUCCESS)
+		fatal("Failed to read acct_gather conf from slurmd");
 
 	/* receive job type from slurmd */
 	safe_read(sock, &step_type, sizeof(int));
@@ -483,22 +548,10 @@ _init_from_slurmd(int sock, char **argv,
 	safe_read(sock, &step_complete.depth, sizeof(int));
 	safe_read(sock, &step_complete.max_depth, sizeof(int));
 	safe_read(sock, &step_complete.parent_addr, sizeof(slurm_addr_t));
-	step_complete.bits = bit_alloc(step_complete.children);
+	if (step_complete.children)
+		step_complete.bits = bit_alloc(step_complete.children);
 	step_complete.jobacct = jobacctinfo_create(NULL);
 	slurm_mutex_unlock(&step_complete.lock);
-
-	/* receive conf from slurmd */
-	if ((conf = read_slurmd_conf_lite (sock)) == NULL)
-		fatal("Failed to read conf from slurmd");
-
-	/*
-	 * LOGGING BEFORE THIS WILL NOT WORK!  Only afterwards will it show
-	 * up in the log.
-	 */
-	log_alter(conf->log_opts, 0, conf->logfile);
-	log_set_timefmt(conf->log_fmt);
-
-	debug2("debug level is %d.", conf->debug_level);
 
 	switch_g_slurmd_step_init();
 
@@ -508,7 +561,7 @@ _init_from_slurmd(int sock, char **argv,
 
 	/* receive cli from slurmd */
 	safe_read(sock, &len, sizeof(int));
-	incoming_buffer = xmalloc(sizeof(char) * len);
+	incoming_buffer = xmalloc(len);
 	safe_read(sock, incoming_buffer, len);
 	buffer = create_buf(incoming_buffer,len);
 	cli = xmalloc(sizeof(slurm_addr_t));
@@ -520,7 +573,7 @@ _init_from_slurmd(int sock, char **argv,
 	safe_read(sock, &len, sizeof(int));
 	if (len > 0) {
 		/* receive packed self from main slurmd */
-		incoming_buffer = xmalloc(sizeof(char) * len);
+		incoming_buffer = xmalloc(len);
 		safe_read(sock, incoming_buffer, len);
 		buffer = create_buf(incoming_buffer,len);
 		self = xmalloc(sizeof(slurm_addr_t));
@@ -542,11 +595,11 @@ _init_from_slurmd(int sock, char **argv,
 	cpu_freq_recv_info(sock);
 
 	/* get the protocol version of the srun */
-	safe_read(sock, &proto, sizeof(int));
+	safe_read(sock, &proto, sizeof(uint16_t));
 
 	/* receive req from slurmd */
 	safe_read(sock, &len, sizeof(int));
-	incoming_buffer = xmalloc(sizeof(char) * len);
+	incoming_buffer = xmalloc(len);
 	safe_read(sock, incoming_buffer, len);
 	buffer = create_buf(incoming_buffer,len);
 
@@ -585,6 +638,11 @@ _init_from_slurmd(int sock, char **argv,
 	}
 
 	_set_job_log_prefix(jobid, stepid);
+
+	if (!conf->hwloc_xml)
+		conf->hwloc_xml = xstrdup_printf("%s/hwloc_topo_%u.%u.xml",
+						 conf->spooldir,
+						 jobid, stepid);
 
 	/*
 	 * Swap the field to the srun client version, which will eventually
@@ -639,10 +697,12 @@ _step_setup(slurm_addr_t *cli, slurm_addr_t *self, slurm_msg_t *msg)
 		gres_plugin_step_state_log(job->step_gres_list, job->jobid,
 					   job->stepid);
 	}
-	if (msg->msg_type == REQUEST_BATCH_JOB_LAUNCH)
+	if (msg->msg_type == REQUEST_BATCH_JOB_LAUNCH) {
 		gres_plugin_job_set_env(&job->env, job->job_gres_list, 0);
-	else if (msg->msg_type == REQUEST_LAUNCH_TASKS)
-		gres_plugin_step_set_env(&job->env, job->step_gres_list, 0);
+	} else if (msg->msg_type == REQUEST_LAUNCH_TASKS) {
+		gres_plugin_step_set_env(&job->env, job->step_gres_list, 0,
+					 NULL, NULL, -1);
+	}
 
 	/*
 	 * Add slurmd node topology informations to job env array

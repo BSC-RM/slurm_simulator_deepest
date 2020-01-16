@@ -1,4 +1,4 @@
-SUBDIRS = cray lua mic openlava pam pam_slurm_adopt perlapi pmi2 seff sgather simulator sgi sjobexit torque
+SUBDIRS = cray lua mic nss_slurm openlava pam pam_slurm_adopt perlapi pmi pmi2 seff sgather sgi sjobexit torque simulator
 
 EXTRA_DIST = \
 	make-3.81.slurm.patch	\

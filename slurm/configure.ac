@@ -7,6 +7,7 @@ AC_INIT(slurm, m4_esyscmd([perl -ne 'print,exit if s/^\s*VERSION:\s*(\d*.\d*).\S
 AC_PREREQ(2.59)
 AC_CONFIG_SRCDIR([configure.ac])
 AC_CONFIG_AUX_DIR([auxdir])
+AC_CONFIG_MACRO_DIR([auxdir])
 AC_CANONICAL_TARGET([])
 
 dnl the is a generic flag to avoid building things
@@ -28,33 +29,9 @@ AC_CONFIG_HEADERS([slurm/slurm.h])
 
 X_AC_RPATH
 
-dnl This sets the first compiler to be C instead of C++ (which would happen
-dnl if X_AC_BGQ was the first thing called.
+dnl This sets the first compiler to be C instead of C++.
 X_AC_DATABASES
 
-X_AC_BG
-
-dnl This needs to be close to the front to set CFLAGS=-m64, but needs to
-dnl be after something that does a AC_LINK_IFELSE or the compiler configure
-dnl checks for will be C++ instead of C.
-X_AC_BGQ
-
-dnl We need to know if this is a Q system
-AM_CONDITIONAL(BGQ_LOADED, test "x$ac_bgq_loaded" = "xyes")
-AC_SUBST(BGQ_LOADED)
-
-dnl ok now check if We are on a real L or P system, (test if to build srun
-dnl or not.  If we are emulating things we should build it.
-AM_CONDITIONAL(REAL_BGQ_LOADED, test "x$ac_real_bluegene_loaded" = "xyes")
-AC_SUBST(REAL_BGQ_LOADED)
-
-
-dnl ok now check if any bluegene was loaded.
-AM_CONDITIONAL(BLUEGENE_LOADED, test "x$ac_bluegene_loaded" = "xyes")
-AC_SUBST(BLUEGENE_LOADED)
-
-
-dnl
 dnl Check to see if this architecture should use slurm_* prefix function
 dnl aliases for plugins.
 dnl
@@ -72,6 +49,10 @@ AC_PROG_CXX
 AC_PROG_MAKE_SET
 AC_PROG_LIBTOOL
 PKG_PROG_PKG_CONFIG([0.9.0])
+
+dnl Silence warning: ar: 'u' modifier ignored since 'D' is the default
+dnl
+AC_SUBST(AR_FLAGS, [cr])
 
 AM_CONDITIONAL(WITH_CXX, test -n "$ac_ct_CXX")
 AM_CONDITIONAL(WITH_GNU_LD, test "$with_gnu_ld" = "yes")
@@ -153,6 +134,10 @@ dnl Checks for types.
 dnl
 X_AC_SLURM_BIGENDIAN
 
+dnl Check for C99 compatibility
+dnl
+X_AC_C99
+
 dnl check for presumed size of uid_t and gid_t
 X_AC_UID_GID_SIZE_CHECK
 
@@ -167,9 +152,9 @@ AX_GCC_BUILTIN(__builtin_clzll)
 AX_GCC_BUILTIN(__builtin_ctzll)
 AX_GCC_BUILTIN(__builtin_popcountll)
 
+
 dnl checks for library functions.
 dnl
-AC_FUNC_MALLOC
 AC_FUNC_STRERROR_R
 AC_CHECK_FUNCS( \
    fdatasync \
@@ -195,7 +180,15 @@ AC_CHECK_FUNCS( \
 
 AC_CHECK_DECLS([hstrerror, strsignal, sys_siglist])
 
-ACX_PTHREAD([], AC_MSG_ERROR([Error: Cannot figure out how to use pthreads!]))
+dnl Skip pthread checks on macOS as support is always enabled,
+dnl and ACX_PTHREAD will inject flags that will throw spurious warnings.
+case "$host" in
+*-darwin*)
+	;;
+*)
+	ACX_PTHREAD([], AC_MSG_ERROR([Error: Cannot figure out how to use pthreads!]))
+	;;
+esac
 
 LDFLAGS="$LDFLAGS "
 CFLAGS="$CFLAGS $PTHREAD_CFLAGS"
@@ -216,15 +209,18 @@ AC_DEFINE([H5_NO_DEPRECATED_SYMBOLS], [1], [Make sure we get the 1.8 HDF5 API])
 AX_CHECK_ZLIB([], [])
 X_AC_LZ4
 X_AC_HWLOC
+X_AC_NVML
 X_AC_PMIX
 X_AC_FREEIPMI
 X_AC_RRDTOOL
 X_AC_UCX
-X_AC_SSH2
+X_AC_X11
 
 X_AC_NCURSES
 AM_CONDITIONAL(HAVE_SOME_CURSES, test "x$ac_have_some_curses" = "xyes")
 AC_SUBST(HAVE_SOME_CURSES)
+
+X_AC_CGROUP
 
 #
 #  Tests for Check
@@ -271,7 +267,6 @@ fi
 
 AM_CONDITIONAL(BUILD_SVIEW, [test "x$ac_glib_test" = "xyes"] && [test "x$ac_gtk_test" = "xyes"])
 
-dnl Cray ALPS/Basil support depends on mySQL
 X_AC_CRAY
 
 dnl checks for system services.
@@ -288,8 +283,6 @@ X_AC_SETPROCTITLE
 dnl check for debug compilation, must follow X_AC_CRAY
 dnl
 X_AC_DEBUG
-AM_CONDITIONAL(DEBUG_MODULES, test "x$ac_debug" = "xtrue")
-
 
 dnl check for slurmctld, slurmd and slurmdbd default ports,
 dnl and default number of slurmctld ports
@@ -306,15 +299,6 @@ else
 fi
 AC_SUBST(SLURM_PREFIX)
 
-dnl check for whether to include IBM NRT (Network Resource Table) support
-dnl
-X_AC_NRT
-
-dnl check for SGI job container support
-dnl
-X_AC_SGI_JOB
-
-
 dnl check for netloc library
 dnl
 X_AC_NETLOC
@@ -329,25 +313,14 @@ X_AC_MAN2HTML
 AM_CONDITIONAL(HAVE_MAN2HTML, test "x$ac_have_man2html" = "xyes")
 AC_SUBST(HAVE_MAN2HTML)
 
-# Workaround with gcc 7.2 printing a warning about printing NULL's
-# This should be fixed in a future version so we properly protect against
-# *printf handling NULLs
-old_CFLAGS=$CFLAGS
-CFLAGS="$CFLAGS -Wno-format-truncation"
+
 dnl check if we can use standard printf functions
 dnl
 X_AC_PRINTF_NULL
-CFLAGS=$old_CFLAGS
 
 dnl Check for whether to include readline support
 dnl
 X_AC_READLINE
-
-dnl
-dnl
-X_AC_SLURM_WITH_SSL
-AM_CONDITIONAL(HAVE_OPENSSL, test "x$ac_have_openssl" = "xyes")
-AC_SUBST(HAVE_OPENSSL)
 
 dnl
 dnl Check for systemd presence, version and system unit dir
@@ -355,7 +328,7 @@ dnl
 X_AC_SYSTEMD
 
 dnl
-dnl Check for compilation of SLURM auth modules:
+dnl Check for compilation of Slurm auth modules:
 dnl
 X_AC_MUNGE
 
@@ -379,14 +352,6 @@ else
   AC_MSG_RESULT([no])
 fi
 
-
-savedLIBS="$LIBS"
-savedCFLAGS="$CFLAGS"
-LIBS="$SSL_LIBS $LIBS"
-CFLAGS="$SSL_CPPFLAGS $CFLAGS"
-LIBS="$savedLIBS"
-CFLAGS="$savedCFLAGS"
-
 savedLIBS="$LIBS"
 LIBS="-lutil $LIBS"
 AC_CHECK_LIB(util, openpty, [UTIL_LIBS="-lutil"], [])
@@ -394,12 +359,7 @@ AC_SUBST(UTIL_LIBS)
 LIBS="$savedLIBS"
 
 dnl
-dnl Check for compilation of SLURM with BLCR support:
-dnl
-X_AC_BLCR
-
-dnl
-dnl Check for compilation of SLURM with CURL support:
+dnl Check for compilation of Slurm with CURL support:
 dnl
 LIBCURL_CHECK_CONFIG
 
@@ -412,6 +372,9 @@ if test "x$ac_have_some_curses" = "xyes" ; then
 fi
 AM_CONDITIONAL(BUILD_SMAP, test "x$ac_build_smap" = "xyes")
 
+dnl Check word size so we can deprecate 32-bit systems
+AC_CHECK_SIZEOF([void *], 8)
+
 dnl This needs to come last so it can detect deprecated options in use.
 X_AC_DEPRECATED
 
@@ -422,8 +385,10 @@ AC_CONFIG_FILES([Makefile
 		 contribs/Makefile
 		 contribs/cray/Makefile
 		 contribs/cray/csm/Makefile
+		 contribs/cray/slurmsmwd/Makefile
 		 contribs/lua/Makefile
 		 contribs/mic/Makefile
+		 contribs/nss_slurm/Makefile
 		 contribs/pam/Makefile
 		 contribs/pam_slurm_adopt/Makefile
 		 contribs/perlapi/Makefile
@@ -438,6 +403,7 @@ AC_CONFIG_FILES([Makefile
 		 contribs/sgi/Makefile
 		 contribs/simulator/Makefile
 		 contribs/sjobexit/Makefile
+		 contribs/pmi/Makefile
 		 contribs/pmi2/Makefile
 		 doc/Makefile
 		 doc/man/Makefile
@@ -453,7 +419,6 @@ AC_CONFIG_FILES([Makefile
 		 src/api/Makefile
 		 src/bcast/Makefile
 		 src/common/Makefile
-		 src/db_api/Makefile
 		 src/layouts/Makefile
 		 src/layouts/power/Makefile
 		 src/layouts/unit/Makefile
@@ -476,12 +441,10 @@ AC_CONFIG_FILES([Makefile
 		 src/slurmd/slurmstepd/Makefile
 		 src/slurmdbd/Makefile
 		 src/smap/Makefile
-		 src/smd/Makefile
 		 src/sprio/Makefile
 		 src/squeue/Makefile
 		 src/srun/Makefile
 		 src/srun/libsrun/Makefile
-		 src/srun_cr/Makefile
 		 src/sshare/Makefile
 		 src/sstat/Makefile
 		 src/strigger/Makefile
@@ -494,11 +457,12 @@ AC_CONFIG_FILES([Makefile
 		 src/plugins/accounting_storage/none/Makefile
 		 src/plugins/accounting_storage/slurmdbd/Makefile
 		 src/plugins/acct_gather_energy/Makefile
-		 src/plugins/acct_gather_energy/cray/Makefile
+		 src/plugins/acct_gather_energy/cray_aries/Makefile
 		 src/plugins/acct_gather_energy/rapl/Makefile
 		 src/plugins/acct_gather_energy/ibmaem/Makefile
 		 src/plugins/acct_gather_energy/ipmi/Makefile
 		 src/plugins/acct_gather_energy/none/Makefile
+		 src/plugins/acct_gather_energy/xcc/Makefile
 		 src/plugins/acct_gather_interconnect/Makefile
 		 src/plugins/acct_gather_interconnect/ofed/Makefile
 		 src/plugins/acct_gather_interconnect/none/Makefile
@@ -508,34 +472,38 @@ AC_CONFIG_FILES([Makefile
 		 src/plugins/acct_gather_profile/Makefile
 		 src/plugins/acct_gather_profile/hdf5/Makefile
 		 src/plugins/acct_gather_profile/hdf5/sh5util/Makefile
+		 src/plugins/acct_gather_profile/influxdb/Makefile
 		 src/plugins/acct_gather_profile/none/Makefile
 		 src/plugins/auth/Makefile
 		 src/plugins/auth/munge/Makefile
 		 src/plugins/auth/none/Makefile
 		 src/plugins/burst_buffer/Makefile
 		 src/plugins/burst_buffer/common/Makefile
-		 src/plugins/burst_buffer/cray/Makefile
+		 src/plugins/burst_buffer/datawarp/Makefile
 		 src/plugins/burst_buffer/generic/Makefile
 		 src/plugins/checkpoint/Makefile
-		 src/plugins/checkpoint/blcr/Makefile
-		 src/plugins/checkpoint/blcr/cr_checkpoint.sh
-		 src/plugins/checkpoint/blcr/cr_restart.sh
 		 src/plugins/checkpoint/none/Makefile
 		 src/plugins/checkpoint/ompi/Makefile
+		 src/plugins/cli_filter/Makefile
+		 src/plugins/cli_filter/none/Makefile
 		 src/plugins/core_spec/Makefile
-		 src/plugins/core_spec/cray/Makefile
+		 src/plugins/core_spec/cray_aries/Makefile
 		 src/plugins/core_spec/none/Makefile
-		 src/plugins/crypto/Makefile
-		 src/plugins/crypto/munge/Makefile
-		 src/plugins/crypto/openssl/Makefile
+		 src/plugins/cred/Makefile
+		 src/plugins/cred/munge/Makefile
+		 src/plugins/cred/none/Makefile
 		 src/plugins/ext_sensors/Makefile
 		 src/plugins/ext_sensors/rrd/Makefile
 		 src/plugins/ext_sensors/none/Makefile
+		 src/plugins/gpu/Makefile
+		 src/plugins/gpu/generic/Makefile
+		 src/plugins/gpu/nvml/Makefile
 		 src/plugins/gres/Makefile
 		 src/plugins/gres/common/Makefile
 		 src/plugins/gres/gpu/Makefile
 		 src/plugins/gres/nic/Makefile
 		 src/plugins/gres/mic/Makefile
+		 src/plugins/gres/mps/Makefile
 		 src/plugins/jobacct_gather/Makefile
 		 src/plugins/jobacct_gather/common/Makefile
 		 src/plugins/jobacct_gather/linux/Makefile
@@ -552,7 +520,7 @@ AC_CONFIG_FILES([Makefile
 		 src/plugins/job_container/none/Makefile
 		 src/plugins/job_submit/Makefile
 		 src/plugins/job_submit/all_partitions/Makefile
-		 src/plugins/job_submit/cray/Makefile
+		 src/plugins/job_submit/cray_aries/Makefile
 		 src/plugins/job_submit/defaults/Makefile
 		 src/plugins/job_submit/logging/Makefile
 		 src/plugins/job_submit/lua/Makefile
@@ -561,9 +529,6 @@ AC_CONFIG_FILES([Makefile
 		 src/plugins/job_submit/require_timelimit/Makefile
 		 src/plugins/job_submit/throttle/Makefile
 		 src/plugins/launch/Makefile
-		 src/plugins/launch/aprun/Makefile
-		 src/plugins/launch/poe/Makefile
-		 src/plugins/launch/runjob/Makefile
 		 src/plugins/launch/slurm/Makefile
 		 src/plugins/mcs/Makefile
 		 src/plugins/mcs/account/Makefile
@@ -575,10 +540,9 @@ AC_CONFIG_FILES([Makefile
 		 src/plugins/node_features/knl_generic/Makefile
 		 src/plugins/power/Makefile
 		 src/plugins/power/common/Makefile
-		 src/plugins/power/cray/Makefile
+		 src/plugins/power/cray_aries/Makefile
 		 src/plugins/power/none/Makefile
 		 src/plugins/preempt/Makefile
-		 src/plugins/preempt/job_prio/Makefile
 		 src/plugins/preempt/none/Makefile
 		 src/plugins/preempt/partition_prio/Makefile
 		 src/plugins/preempt/qos/Makefile
@@ -586,12 +550,10 @@ AC_CONFIG_FILES([Makefile
 		 src/plugins/priority/basic/Makefile
 		 src/plugins/priority/multifactor/Makefile
 		 src/plugins/proctrack/Makefile
-		 src/plugins/proctrack/cray/Makefile
+		 src/plugins/proctrack/cray_aries/Makefile
 		 src/plugins/proctrack/cgroup/Makefile
 		 src/plugins/proctrack/pgid/Makefile
 		 src/plugins/proctrack/linuxproc/Makefile
-		 src/plugins/proctrack/sgi_job/Makefile
-		 src/plugins/proctrack/lua/Makefile
 		 src/plugins/route/Makefile
 		 src/plugins/route/default/Makefile
 		 src/plugins/route/topology/Makefile
@@ -600,26 +562,19 @@ AC_CONFIG_FILES([Makefile
 		 src/plugins/sched/builtin/Makefile
 		 src/plugins/sched/hold/Makefile
 		 src/plugins/select/Makefile
-		 src/plugins/select/alps/Makefile
-		 src/plugins/select/alps/libalps/Makefile
-		 src/plugins/select/alps/libemulate/Makefile
-		 src/plugins/select/bluegene/Makefile
-		 src/plugins/select/bluegene/ba_bgq/Makefile
-		 src/plugins/select/bluegene/bl_bgq/Makefile
-		 src/plugins/select/bluegene/sfree/Makefile
 		 src/plugins/select/cons_res/Makefile
-		 src/plugins/select/cray/Makefile
+		 src/plugins/select/cons_tres/Makefile
+		 src/plugins/select/cray_aries/Makefile
 		 src/plugins/select/linear/Makefile
 		 src/plugins/select/other/Makefile
-		 src/plugins/select/serial/Makefile
+		 src/plugins/site_factor/Makefile
+		 src/plugins/site_factor/none/Makefile
 		 src/plugins/slurmctld/Makefile
 		 src/plugins/slurmctld/nonstop/Makefile
 		 src/plugins/switch/Makefile
-		 src/plugins/switch/cray/Makefile
+		 src/plugins/switch/cray_aries/Makefile
 		 src/plugins/switch/generic/Makefile
 		 src/plugins/switch/none/Makefile
-		 src/plugins/switch/nrt/Makefile
-		 src/plugins/switch/nrt/libpermapi/Makefile
 		 src/plugins/mpi/Makefile
 		 src/plugins/mpi/none/Makefile
 		 src/plugins/mpi/openmpi/Makefile
@@ -628,7 +583,7 @@ AC_CONFIG_FILES([Makefile
 		 src/plugins/task/Makefile
 		 src/plugins/task/affinity/Makefile
 		 src/plugins/task/cgroup/Makefile
-		 src/plugins/task/cray/Makefile
+		 src/plugins/task/cray_aries/Makefile
 		 src/plugins/task/none/Makefile
 		 src/plugins/topology/Makefile
 		 src/plugins/topology/3d_torus/Makefile

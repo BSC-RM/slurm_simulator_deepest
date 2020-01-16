@@ -8,11 +8,11 @@
  *  Written by Danny Auble <da@llnl.gov>
  *  CODE-OCEC-09-009. All rights reserved.
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -28,13 +28,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -71,6 +71,9 @@ char *time_format_string = "Minutes";
 void *db_conn = NULL;
 slurmdb_report_sort_t sort_flag = SLURMDB_REPORT_SORT_TIME;
 char *tres_usage_str = "CPU";
+/* by default, normalize all usernames to lower case */
+bool user_case_norm = true;
+bool node_tres = false;
 
 static char *	_build_cluster_string(void);
 static void	_build_tres_list(void);
@@ -93,6 +96,7 @@ main (int argc, char **argv)
 	log_options_t opts = LOG_OPTS_STDERR_ONLY ;
 	char *temp = NULL;
 	int option_index;
+	uint16_t persist_conn_flags = 0;
 	static struct option long_options[] = {
 		{"all_clusters", 0, 0, 'a'},
 		{"cluster",  1, 0, 'M'},
@@ -243,11 +247,14 @@ main (int argc, char **argv)
 	    !local_flag)
 		cluster_flag = _build_cluster_string();
 
-	db_conn = slurmdb_connection_get();
+	db_conn = slurmdb_connection_get2(&persist_conn_flags);
 	if (errno) {
 		fatal("Problem connecting to the database: %m");
 		exit(1);
 	}
+
+	if (persist_conn_flags & PERSIST_FLAG_P_USER_CASE)
+		user_case_norm = false;
 
 	_build_tres_list();
 
@@ -357,7 +364,16 @@ static void _build_tres_list(void)
 				break;
 			tok = strtok_r(NULL, ",", &save_ptr);
 		}
-		if (tok) {
+		if (tok && !xstrcasecmp(tok, "node")) {
+			if ((time_format == SLURMDB_REPORT_TIME_SECS_PER) ||
+			    (time_format == SLURMDB_REPORT_TIME_MINS_PER) ||
+			    (time_format == SLURMDB_REPORT_TIME_HOURS_PER) ||
+			    (time_format == SLURMDB_REPORT_TIME_PERCENT))
+				fatal("TRES node usage is no longer reported in percent format reports.  Please use TRES CPU instead.");
+			else
+				node_tres = true;
+		}
+		if (tok || !xstrcasecmp(tres_str, "ALL")) {
 			slurmdb_tres_rec_t *tres2 =
 				slurmdb_copy_tres_rec(tres);
 			list_append(tres_list, tres2);
@@ -393,7 +409,7 @@ static char *_getline(const char *prompt)
 		buf[len-1] = '\0';
 	else
 		len++;
-	line = malloc(len * sizeof(char));
+	line = malloc(len);
 	if (!line)
 		return NULL;
 	strlcpy(line, buf, len);
@@ -414,7 +430,7 @@ static void _job_rep (int argc, char **argv)
 	/* For backwards compatibility we just look at the 1st char
 	 * by default since Sizes was the original name */
 	if (!xstrncasecmp(argv[0], "SizesByAccount", MAX(command_len, 1))) {
-		error_code = job_sizes_grouped_by_top_acct(
+		error_code = job_sizes_grouped_by_acct(
 			(argc - 1), &argv[1]);
 	} else if (!xstrncasecmp(argv[0],
 				 "SizesByWcKey", MAX(command_len, 8))) {
@@ -423,7 +439,7 @@ static void _job_rep (int argc, char **argv)
 	} else if (!xstrncasecmp(argv[0],
 				"SizesByAccountAndWcKey",
 				MAX(command_len, 15))) {
-		error_code = job_sizes_grouped_by_top_acct_and_wckey(
+		error_code = job_sizes_grouped_by_acct_and_wckey(
 			(argc - 1), &argv[1]);
 	} else {
 		exit_code = 1;
@@ -502,6 +518,8 @@ static void _cluster_rep (int argc, char **argv)
 		   || (xstrncasecmp(argv[0], "UW", 2) == 0)) {
 		error_code = cluster_user_by_wckey((argc - 1), &argv[1]);
 	} else if (xstrncasecmp(argv[0], "Utilization", 2) == 0) {
+		if (node_tres)
+			fatal("TRES node usage is no longer reported in the Cluster Utilization report.  Please use TRES CPU instead.");
 		error_code = cluster_utilization((argc - 1), &argv[1]);
 	} else if (xstrncasecmp(argv[0], "WCKeyUtilizationByUser", 1) == 0) {
 		error_code = cluster_wckey_by_user((argc - 1), &argv[1]);
@@ -831,7 +849,7 @@ sreport [<OPTION>] [<COMMAND>]                                             \n\
      -P or --parsable2: output will be '|' delimited without a '|' at the end\n\
      -Q or --quiet: equivalent to \"quiet\" command                        \n\
      -t <time_format>: Second, Minute, Hour, Percent, SecPer, MinPer, HourPer\n\
-     -T pr --tres: comma separated list of TRES, or 'ALL' for all TRES     \n\
+     -T or --tres: comma separated list of TRES, or 'ALL' for all TRES     \n\
      -v or --verbose: equivalent to \"verbose\" command                    \n\
      -V or --version: equivalent to \"version\" command                    \n\
                                                                            \n\
@@ -892,16 +910,19 @@ sreport [<OPTION>] [<COMMAND>]                                             \n\
                                   or WCKeyUtilizationByUser, List of wckeys\n\
                                   to include in report.  Default is all.   \n\
                                                                            \n\
-     job     - Accounts=<OPT>   - List of accounts to use for the report   \n\
-                                  Default is all.  The SizesbyAccount(*)   \n\
-                                  report only displays 1 hierarchical level.\n\
-                                  If accounts are specified the next layer \n\
-                                  of accounts under those specified will be\n\
-                                  displayed, not the accounts specified.   \n\
-                                  In the SizesByAccount(*) reports the     \n\
-                                  default for accounts is root.  This      \n\
-                                  explanation does not apply when ran with \n\
-                                  the FlatView option.                     \n\
+     job     - Accounts=<OPT>   - List of accounts to use for the report.  \n\
+                                  Default is all, which will show only     \n\
+                                  one line corresponding to the totals of  \n\
+                                  all accounts in the hierarchy.           \n\
+                                  This explanation does not apply when ran \n\
+                                  with the FlatView or AcctAsParent option.\n\
+             - AcctAsParent     - When used with the SizesbyAccount(*)     \n\
+                                  will take specified accounts as parents  \n\
+                                  and the next layer of accounts under     \n\
+                                  those specified will be displayed.       \n\
+                                  Default is root if no Accounts specified.\n\
+                                  When FlatView is used, this option is    \n\
+                                  ignored.                                 \n\
              - FlatView         - When used with the SizesbyAccount(*)     \n\
                                   will not group accounts in a             \n\
                                   hierarchical level, but print each       \n\
@@ -987,4 +1008,3 @@ sreport [<OPTION>] [<COMMAND>]                                             \n\
   All commands and options are case-insensitive.                         \n\n");
 
 }
-

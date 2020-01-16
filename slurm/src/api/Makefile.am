@@ -3,7 +3,7 @@
 
 AUTOMAKE_OPTIONS = foreign
 
-AM_CPPFLAGS = -I$(top_srcdir) $(BG_INCLUDES)
+AM_CPPFLAGS = -I$(top_srcdir)
 
 if WITH_GNU_LD
 VERSION_SCRIPT = \
@@ -14,10 +14,6 @@ FULL_VERSION_SCRIPT = \
 	full_version.map
 FULL_OTHER_FLAGS = \
 	-Wl,--version-script=$(FULL_VERSION_SCRIPT)
-PMI_VERSION_SCRIPT = \
-	pmi_version.map
-PMI_OTHER_FLAGS = \
-	-Wl,--version-script=$(PMI_VERSION_SCRIPT)
 endif
 
 # libslurm version information :
@@ -48,20 +44,7 @@ current = $(SLURM_API_CURRENT)
 age     = $(SLURM_API_AGE)
 rev     = $(SLURM_API_REVISION)
 
-# libpmi version information
-#
-# The libpmi interface shouldn't be changing any time soon, so for SLURM's
-# libpmi only the library REVISION and AGE should change (and it is debatable
-# whether these parts of the .so version should change).
-#
-# REVISION is changed if the source of the library has changed so linkers
-# prefer the new version.
-# AGE is changed if interfaces are added but compatibility is not broken.
-libpmi_current = 0
-libpmi_age     = 0
-libpmi_rev     = 0
-
-lib_LTLIBRARIES = libslurm.la libpmi.la
+lib_LTLIBRARIES = libslurm.la
 
 # The ABI of libslurmfull can easily change from 1 micro version to another.
 # To avoid issue we will install this lib alongside the plugins to protect
@@ -69,10 +52,8 @@ lib_LTLIBRARIES = libslurm.la libpmi.la
 pkglib_LTLIBRARIES = libslurmfull.la
 
 # BUILT_SOURCES tells automake that when "make" is called, these targets
-# need to be built before anything else.  For instance, this takes care
-# of libpmi.la's dependency on libslurm.la, as long as you use "make"
-# and NOT "make libpmi.la".
-BUILT_SOURCES = $(VERSION_SCRIPT) $(FULL_VERSION_SCRIPT) $(PMI_VERSION_SCRIPT) libslurm.la
+# need to be built before anything else.
+BUILT_SOURCES = $(VERSION_SCRIPT) $(FULL_VERSION_SCRIPT) libslurm.la
 
 # Note that libslurmhelper is mostly the same as libslurm, except that
 # it exports ALL symbols used by the process, libcommon, libeio, etc.
@@ -86,6 +67,26 @@ noinst_LTLIBRARIES = libslurmhelper.la
 noinst_PROGRAMS = libslurm.o
 # This is needed if compiling on windows
 EXEEXT=
+
+slurmdbapi_src =	\
+	account_functions.c \
+	archive_functions.c \
+	assoc_functions.c \
+	cluster_functions.c \
+	cluster_report_functions.c \
+	coord_functions.c \
+	connection_functions.c \
+	extra_get_functions.c \
+	federation_functions.c \
+	job_functions.c \
+	job_report_functions.c \
+	qos_functions.c \
+	resource_functions.c \
+	tres_functions.c \
+	usage_functions.c \
+	user_functions.c \
+	user_report_functions.c \
+	wckey_functions.c
 
 slurmapi_src =           \
 	allocate.c       \
@@ -112,7 +113,6 @@ slurmapi_src =           \
 	reservation_info.c \
 	signal.c         \
 	slurm_get_statistics.c \
-	slurm_hostlist.c \
 	slurm_pmi.c      \
 	slurm_pmi.h	 \
 	step_ctx.c       \
@@ -126,7 +126,8 @@ slurmapi_src =           \
 	topo_info.c      \
 	triggers.c       \
 	reconfigure.c    \
-	update_config.c
+	update_config.c \
+	$(slurmdbapi_src)
 
 common_dir = $(top_builddir)/src/common
 
@@ -158,16 +159,6 @@ libslurmfull_la_LDFLAGS        = \
         $(LIB_LDFLAGS) \
 	-avoid-version \
         $(FULL_OTHER_FLAGS)
-#
-# The libpmi_la_LIBADD specification below causes libpmi.la to relink
-# when running "make install", but removing it prevents essential slurm
-# symbols from being available in programs linking with libpmi
-#
-libpmi_la_SOURCES = pmi.c
-libpmi_la_LIBADD = $(top_builddir)/src/api/libslurm.la
-libpmi_la_LDFLAGS = $(LIB_LDFLAGS) \
-        -version-info $(libpmi_current):$(libpmi_rev):$(libpmi_age) \
-        $(PMI_OTHER_FLAGS)
 
 # This was made so we could export all symbols from libcommon
 # on multiple platforms
@@ -191,6 +182,7 @@ $(VERSION_SCRIPT) :
 	 echo "   slurm_*;"; \
 	 echo "   slurmdb_*;"; \
 	 echo "   plugin_context_*;"; \
+	 echo "   working_cluster_rec;"; \
 	 echo "  local: *;"; \
 	 echo "};") > $(VERSION_SCRIPT)
 
@@ -199,14 +191,8 @@ $(FULL_VERSION_SCRIPT) :
 	 echo "  local: *;"; \
 	 echo "};") > $(FULL_VERSION_SCRIPT)
 
-$(PMI_VERSION_SCRIPT) :
-	(echo "{ global:"; \
-	 echo "   PMI_*;"; \
-	 echo "  local: *;"; \
-	 echo "};") > $(PMI_VERSION_SCRIPT)
-
 CLEANFILES = \
-	$(VERSION_SCRIPT) $(FULL_VERSION_SCRIPT) $(PMI_VERSION_SCRIPT)
+	$(VERSION_SCRIPT) $(FULL_VERSION_SCRIPT)
 
 DISTCLEANFILES = \
-	$(VERSION_SCRIPT) $(FULL_VERSION_SCRIPT) $(PMI_VERSION_SCRIPT)
+	$(VERSION_SCRIPT) $(FULL_VERSION_SCRIPT)

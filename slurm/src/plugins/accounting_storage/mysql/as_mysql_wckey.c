@@ -7,11 +7,11 @@
  *  Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
  *  Written by Danny Auble <da@llnl.gov>
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -27,13 +27,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -275,8 +275,8 @@ static int _cluster_remove_wckeys(mysql_conn_t *mysql_conn,
 	MYSQL_ROW row;
 	char *assoc_char = NULL;
 	time_t now = time(NULL);
-	char *query = xstrdup_printf("select t1.id_wckey, t1.wckey_name "
-				     "from \"%s_%s\" as t1%s;",
+	char *query = xstrdup_printf("select t1.id_wckey, t1.wckey_name, "
+				     "t1.user from \"%s_%s\" as t1%s;",
 				     cluster_name, wckey_table, extra);
 	if (!(result = mysql_db_query_ret(mysql_conn, query, 0))) {
 		xfree(query);
@@ -291,8 +291,10 @@ static int _cluster_remove_wckeys(mysql_conn_t *mysql_conn,
 
 	while ((row = mysql_fetch_row(result))) {
 		slurmdb_wckey_rec_t *wckey_rec = NULL;
+		char *object = xstrdup_printf("C = %-10s W = %-20s U = %-9s",
+					      cluster_name, row[1], row[2]);
+		list_append(ret_list, object);
 
-		list_append(ret_list, xstrdup(row[1]));
 		if (!assoc_char)
 			xstrfmtcat(assoc_char, "id_wckey='%s'", row[0]);
 		else
@@ -813,7 +815,7 @@ extern List as_mysql_get_wckeys(mysql_conn_t *mysql_conn, uid_t uid,
 		if (!(is_admin = is_user_min_admin_level(
 			      mysql_conn, uid, SLURMDB_ADMIN_OPERATOR))) {
 			assoc_mgr_fill_in_user(
-				mysql_conn, &user, 1, NULL);
+				mysql_conn, &user, 1, NULL, false);
 		}
 		if (!is_admin && !user.name) {
 			debug("User %u has no associations, and is not admin, "

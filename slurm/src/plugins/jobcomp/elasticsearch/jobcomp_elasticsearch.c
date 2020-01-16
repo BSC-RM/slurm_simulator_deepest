@@ -6,11 +6,11 @@
  *  Written by Alejandro Sanchez Graells <alejandro.sanchezgraells@bsc.es>,
  *  <asanchez1987@gmail.com>, who borrowed heavily from jobcomp/filetxt
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -26,13 +26,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -77,21 +77,21 @@
  * plugin_type - a string suggesting the type of the plugin or its
  * applicability to a particular form of data or method of data handling.
  * If the low-level plugin API is used, the contents of this string are
- * unimportant and may be anything. SLURM uses the higher-level plugin
+ * unimportant and may be anything. Slurm uses the higher-level plugin
  * interface which requires this string to be of the form
  *
  *	<application>/<method>
  *
  * where <application> is a description of the intended application of
- * the plugin (e.g., "jobcomp" for SLURM job completion logging) and <method>
- * is a description of how this plugin satisfies that application. SLURM will
+ * the plugin (e.g., "jobcomp" for Slurm job completion logging) and <method>
+ * is a description of how this plugin satisfies that application. Slurm will
  * only load job completion logging plugins if the plugin_type string has a
  * prefix of "jobcomp/".
  *
  * plugin_version - an unsigned 32-bit integer giving the version number
  * of the plugin. If major and minor revisions are desired, the major
  * version number may be multiplied by a suitable magnitude constant such
- * as 100 or 1000. Various SLURM versions will likely require a certain
+ * as 100 or 1000. Various Slurm versions will likely require a certain
  * minimum version for their plugins as the job completion logging API
  * matures.
  */
@@ -113,23 +113,12 @@ const uint32_t plugin_version = SLURM_VERSION_NUMBER;
  * overwritten when linking with the slurmctld.
  */
 #if defined (__APPLE__)
-int accounting_enforce __attribute__((weak_import)) = 0;
-void *acct_db_conn __attribute__((weak_import)) = NULL;
+extern int accounting_enforce __attribute__((weak_import));
+extern void *acct_db_conn __attribute__((weak_import));
 #else
 int accounting_enforce = 0;
 void *acct_db_conn = NULL;
 #endif
-
-/* Type for error string table entries */
-typedef struct {
-	int xe_number;
-	char *xe_message;
-} slurm_errtab_t;
-
-static slurm_errtab_t slurm_errtab[] = {
-	{0, "No error"},
-	{-1, "Unspecified error"}
-};
 
 /* Type for handling HTTP responses */
 struct http_response {
@@ -146,14 +135,13 @@ char *save_state_file = "elasticsearch_state";
 char *index_type = "/slurm/jobcomp";
 char *log_url = NULL;
 
+static pthread_cond_t location_cond = PTHREAD_COND_INITIALIZER;
+static pthread_mutex_t location_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t save_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t pend_jobs_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_t job_handler_thread;
 static List jobslist = NULL;
 static bool thread_shutdown = false;
-
-/* A plugin-global errno. */
-static int plugin_errno = SLURM_SUCCESS;
 
 /* Get the user name for the give user_id */
 static void _get_user_name(uint32_t user_id, char *user_name, int buf_size)
@@ -183,24 +171,6 @@ static void _get_group_name(uint32_t group_id, char *group_name, int buf_size)
 		cache_gid = group_id;
 	}
 	snprintf(group_name, buf_size, "%s", cache_name);
-}
-
-/*
- * Linear search through table of errno values and strings,
- * returns NULL on error, string on success.
- */
-static char *_lookup_slurm_api_errtab(int errnum)
-{
-	char *res = NULL;
-	int i;
-
-	for (i = 0; i < sizeof(slurm_errtab) / sizeof(slurm_errtab_t); i++) {
-		if (slurm_errtab[i].xe_number == errnum) {
-			res = slurm_errtab[i].xe_message;
-			break;
-		}
-	}
-	return res;
 }
 
 /* Read file to data variable */
@@ -596,7 +566,7 @@ static void _make_time_str(time_t * time, char *string, int size)
 #if USE_ISO8601
 		/* Format YYYY-MM-DDTHH:MM:SS, ISO8601 standard format,
 		 * NOTE: This is expected to break Maui, Moab and LSF
-		 * schedulers management of SLURM. */
+		 * schedulers management of Slurm. */
 		snprintf(string, size,
 			 "%4.4u-%2.2u-%2.2uT%2.2u:%2.2u:%2.2u",
 			 (time_tm.tm_year + 1900), (time_tm.tm_mon + 1),
@@ -617,7 +587,8 @@ extern int slurm_jobcomp_log_record(struct job_record *job_ptr)
 {
 	char usr_str[32], grp_str[32], start_str[32], end_str[32], time_str[32];
 	char *json_str = NULL, *script_str = NULL, *state_string = NULL;
-	char *exit_code_str = NULL, *derived_ec_str = NULL, *script = NULL;
+	char *exit_code_str = NULL, *derived_ec_str = NULL;
+	Buf script;
 	enum job_states job_state;
 	int i, tmp_int, tmp_int2;
 	time_t elapsed_time;
@@ -832,12 +803,12 @@ extern int slurm_jobcomp_log_record(struct job_record *job_ptr)
 	}
 
 	script = get_job_script(job_ptr);
-	if (script && script[0]) {
-		script_str = _json_escape(script);
+	if (script) {
+		script_str = _json_escape(script->head);
 		xstrfmtcat(json_str, ",\"script\":\"%s\"", script_str);
 		xfree(script_str);
 	}
-	xfree(script);
+	free_buf(script);
 
 	if (job_ptr->assoc_ptr) {
 		assoc_mgr_lock_t locks = { READ_LOCK, NO_LOCK, NO_LOCK, NO_LOCK,
@@ -891,7 +862,14 @@ extern void *_process_jobs(void *x)
 {
 	ListIterator iter;
 	struct job_node *jnode = NULL;
+	struct timespec ts = {0, 0};
 	time_t now;
+
+	/* Wait for slurm_jobcomp_set_location log_url setup. */
+	slurm_mutex_lock(&location_mutex);
+	ts.tv_sec = time(NULL) + INDEX_RETRY_INTERVAL;
+	slurm_cond_timedwait(&location_cond, &location_mutex, &ts);
+	slurm_mutex_unlock(&location_mutex);
 
 	while (!thread_shutdown) {
 		int success_cnt = 0, fail_cnt = 0, wait_retry_cnt = 0;
@@ -959,7 +937,7 @@ extern int fini(void)
 }
 
 /*
- * The remainder of this file implements the standard SLURM job completion
+ * The remainder of this file implements the standard Slurm job completion
  * logging API.
  */
 extern int slurm_jobcomp_set_location(char *location)
@@ -994,18 +972,11 @@ extern int slurm_jobcomp_set_location(char *location)
 	}
 	curl_global_cleanup();
 
+	slurm_mutex_lock(&location_mutex);
+	slurm_cond_broadcast(&location_cond);
+	slurm_mutex_unlock(&location_mutex);
+
 	return rc;
-}
-
-extern int slurm_jobcomp_get_errno(void)
-{
-	return plugin_errno;
-}
-
-extern char *slurm_jobcomp_strerror(int errnum)
-{
-	char *res = _lookup_slurm_api_errtab(errnum);
-	return (res ? res : strerror(errnum));
 }
 
 /*

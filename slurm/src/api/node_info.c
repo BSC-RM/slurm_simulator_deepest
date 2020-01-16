@@ -8,11 +8,11 @@
  *  Written by Morris Jette <jette1@llnl.gov> et. al.
  *  CODE-OCEC-09-009. All rights reserved.
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -28,13 +28,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -55,6 +55,7 @@
 #include "src/common/slurm_auth.h"
 #include "src/common/slurm_ext_sensors.h"
 #include "src/common/slurm_protocol_api.h"
+#include "src/common/slurm_resource_info.h"
 #include "src/common/uid.h"
 #include "src/common/xmalloc.h"
 #include "src/common/xstring.h"
@@ -96,7 +97,6 @@ slurm_print_node_info_msg ( FILE * out, node_info_msg_t * node_info_msg_ptr,
 
 	for (i = 0; i < node_info_msg_ptr-> record_count; i++) {
 		slurm_print_node_table ( out, & node_ptr[i],
-					 node_info_msg_ptr->node_scaling,
 					 one_liner ) ;
 	}
 }
@@ -107,16 +107,12 @@ slurm_print_node_info_msg ( FILE * out, node_info_msg_t * node_info_msg_ptr,
  *	based upon message as loaded using slurm_load_node
  * IN out - file to write to
  * IN node_ptr - an individual node information record pointer
- * IN node_scaling - number of nodes each node represents
  * IN one_liner - print as a single line if true
  */
-void
-slurm_print_node_table ( FILE * out, node_info_t * node_ptr,
-			 int node_scaling, int one_liner )
+void slurm_print_node_table(FILE *out, node_info_t *node_ptr, int one_liner)
 {
-	char *print_this = slurm_sprint_node_table(node_ptr, node_scaling,
-						   one_liner);
-	fprintf ( out, "%s", print_this);
+	char *print_this = slurm_sprint_node_table(node_ptr, one_liner);
+	fprintf(out, "%s", print_this);
 	xfree(print_this);
 }
 
@@ -173,29 +169,21 @@ slurm_populate_node_partitions(node_info_msg_t *node_buffer_ptr,
  * slurm_sprint_node_table - output information about a specific Slurm nodes
  *	based upon message as loaded using slurm_load_node
  * IN node_ptr - an individual node information record pointer
- * IN node_scaling - number of nodes each node represents
  * IN one_liner - print as a single line if true
  * RET out - char * containing formatted output (must be freed after call)
  *           NULL is returned on failure.
  */
-char *
-slurm_sprint_node_table (node_info_t * node_ptr,
-			 int node_scaling, int one_liner )
+char *slurm_sprint_node_table(node_info_t *node_ptr, int one_liner)
 {
 	uint32_t my_state = node_ptr->node_state;
 	char *cloud_str = "", *comp_str = "", *drain_str = "", *power_str = "";
 	char time_str[32];
-	char *out = NULL, *reason_str = NULL, *select_reason_str = NULL;
-	uint16_t err_cpus = 0, alloc_cpus = 0;
-	int cpus_per_node = 1;
+	char *out = NULL, *reason_str = NULL;
+	uint16_t alloc_cpus = 0;
 	int idle_cpus;
-	uint32_t cluster_flags = slurmdb_setup_cluster_flags();
 	uint64_t alloc_memory;
 	char *node_alloc_tres = NULL;
 	char *line_end = (one_liner) ? " " : "\n   ";
-
-	if (node_scaling)
-		cpus_per_node = node_ptr->cpus / node_scaling;
 
 	if (my_state & NODE_STATE_CLOUD) {
 		my_state &= (~NODE_STATE_CLOUD);
@@ -217,56 +205,40 @@ slurm_sprint_node_table (node_info_t * node_ptr,
 		my_state &= (~NODE_STATE_POWER_SAVE);
 		power_str = "+POWER";
 	}
+	if (my_state & NODE_STATE_POWERING_DOWN) {
+		my_state &= (~NODE_STATE_POWERING_DOWN);
+		power_str = "+POWERING_DOWN";
+	}
 	slurm_get_select_nodeinfo(node_ptr->select_nodeinfo,
 				  SELECT_NODEDATA_SUBCNT,
 				  NODE_STATE_ALLOCATED,
 				  &alloc_cpus);
-	if (cluster_flags & CLUSTER_FLAG_BG) {
-		if (!alloc_cpus &&
-		    (IS_NODE_ALLOCATED(node_ptr) ||
-		     IS_NODE_COMPLETING(node_ptr)))
-			alloc_cpus = node_ptr->cpus;
-		else
-			alloc_cpus *= cpus_per_node;
-	}
 	idle_cpus = node_ptr->cpus - alloc_cpus;
 
-	slurm_get_select_nodeinfo(node_ptr->select_nodeinfo,
-				  SELECT_NODEDATA_SUBCNT,
-				  NODE_STATE_ERROR,
-				  &err_cpus);
-	if (cluster_flags & CLUSTER_FLAG_BG)
-		err_cpus *= cpus_per_node;
-	idle_cpus -= err_cpus;
-
-	if ((alloc_cpus && err_cpus) ||
-	    (idle_cpus  && (idle_cpus != node_ptr->cpus))) {
+	if (idle_cpus  && (idle_cpus != node_ptr->cpus)) {
 		my_state &= NODE_STATE_FLAGS;
 		my_state |= NODE_STATE_MIXED;
 	}
 
 	/****** Line 1 ******/
 	xstrfmtcat(out, "NodeName=%s ", node_ptr->name);
-	if (cluster_flags & CLUSTER_FLAG_BG) {
-		slurm_get_select_nodeinfo(node_ptr->select_nodeinfo,
-					  SELECT_NODEDATA_RACK_MP,
-					  0, &select_reason_str);
-		if (select_reason_str) {
-			xstrfmtcat(out, "RackMidplane=%s ", select_reason_str);
-			xfree(select_reason_str);
-		}
-	}
 
 	if (node_ptr->arch)
 		xstrfmtcat(out, "Arch=%s ", node_ptr->arch);
 
-	xstrfmtcat(out, "CoresPerSocket=%u", node_ptr->cores);
+	if (node_ptr->cpu_bind) {
+		char tmp_str[128];
+		slurm_sprint_cpu_bind_type(tmp_str, node_ptr->cpu_bind);
+		xstrfmtcat(out, "CpuBind=%s ", tmp_str);
+	}
+
+	xstrfmtcat(out, "CoresPerSocket=%u ", node_ptr->cores);
 
 	xstrcat(out, line_end);
 
 	/****** Line ******/
-	xstrfmtcat(out, "CPUAlloc=%u CPUErr=%u CPUTot=%u ",
-		   alloc_cpus, err_cpus, node_ptr->cpus);
+	xstrfmtcat(out, "CPUAlloc=%u CPUTot=%u ",
+		   alloc_cpus, node_ptr->cpus);
 
 	if (node_ptr->cpu_load == NO_VAL)
 		xstrcat(out, "CPULoad=N/A");
@@ -319,7 +291,7 @@ slurm_sprint_node_table (node_info_t * node_ptr,
 			line_used = true;
 		}
 
-		if (node_ptr->version && xstrcmp(node_ptr->version, slurmctld_conf.version)) {
+		if (node_ptr->version) {
 			xstrfmtcat(out, "Version=%s", node_ptr->version);
 			line_used = true;
 		}
@@ -389,6 +361,14 @@ slurm_sprint_node_table (node_info_t * node_ptr,
 	xstrcat(out, line_end);
 
 	/****** Line ******/
+	if ((node_ptr->next_state != NO_VAL) &&
+	    (my_state & NODE_STATE_REBOOT)) {
+		xstrfmtcat(out, "NextState=%s",
+			   node_state_string(node_ptr->next_state));
+		xstrcat(out, line_end);
+	}
+
+	/****** Line ******/
 	if (node_ptr->partitions) {
 		xstrfmtcat(out, "Partitions=%s ", node_ptr->partitions);
 		xstrcat(out, line_end);
@@ -433,14 +413,11 @@ slurm_sprint_node_table (node_info_t * node_ptr,
 
 	/****** Power Consumption Line ******/
 	if (!node_ptr->energy || node_ptr->energy->current_watts == NO_VAL)
-		xstrcat(out, "CurrentWatts=n/s LowestJoules=n/s ConsumedJoules=n/s");
+		xstrcat(out, "CurrentWatts=n/s AveWatts=n/s");
 	else
-		xstrfmtcat(out, "CurrentWatts=%u "
-				"LowestJoules=%"PRIu64" "
-				"ConsumedJoules=%"PRIu64"",
+		xstrfmtcat(out, "CurrentWatts=%u AveWatts=%u",
 				node_ptr->energy->current_watts,
-				node_ptr->energy->base_consumed_energy,
-				node_ptr->energy->consumed_energy);
+				node_ptr->energy->ave_watts);
 
 	xstrcat(out, line_end);
 
@@ -471,15 +448,6 @@ slurm_sprint_node_table (node_info_t * node_ptr,
 	/****** Line ******/
 	if (node_ptr->reason && node_ptr->reason[0])
 		xstrcat(reason_str, node_ptr->reason);
-	slurm_get_select_nodeinfo(node_ptr->select_nodeinfo,
-				  SELECT_NODEDATA_EXTRA_INFO,
-				  0, &select_reason_str);
-	if (select_reason_str && select_reason_str[0]) {
-		if (reason_str)
-			xstrcat(reason_str, "\n");
-		xstrcat(reason_str, select_reason_str);
-	}
-	xfree(select_reason_str);
 	if (reason_str) {
 		int inx = 1;
 		char *save_ptr = NULL, *tok, *user_name;
@@ -563,7 +531,7 @@ static int _load_cluster_nodes(slurm_msg_t *req_msg,
 		break;
 	}
 
-	return SLURM_PROTOCOL_SUCCESS;
+	return SLURM_SUCCESS;
 }
 
 /* Maintain a consistent ordering of records */
@@ -693,7 +661,7 @@ static int _load_fed_nodes(slurm_msg_t *req_msg,
 	if (!orig_msg)
 		slurm_seterrno_ret(SLURM_ERROR);
 
-	return SLURM_PROTOCOL_SUCCESS;
+	return SLURM_SUCCESS;
 }
 
 /*
@@ -732,12 +700,13 @@ extern int slurm_load_node(time_t update_time, node_info_msg_t **resp,
 	}
 
 	slurm_msg_t_init(&req_msg);
+	memset(&req, 0, sizeof(req));
 	req.last_update  = update_time;
 	req.show_flags   = show_flags;
 	req_msg.msg_type = REQUEST_NODE_INFO;
 	req_msg.data     = &req;
 
-	if (show_flags & SHOW_FEDERATION) {
+	if ((show_flags & SHOW_FEDERATION) && ptr) { /* "ptr" check for CLANG */
 		fed = (slurmdb_federation_rec_t *) ptr;
 		rc = _load_fed_nodes(&req_msg, resp, show_flags, cluster_name,
 				     fed);
@@ -764,6 +733,7 @@ extern int slurm_load_node2(time_t update_time, node_info_msg_t **resp,
 	node_info_request_msg_t req;
 
 	slurm_msg_t_init(&req_msg);
+	memset(&req, 0, sizeof(req));
 	req.last_update  = update_time;
 	req.show_flags   = show_flags;
 	req_msg.msg_type = REQUEST_NODE_INFO;
@@ -788,6 +758,7 @@ extern int slurm_load_node_single(node_info_msg_t **resp, char *node_name,
 	node_info_single_msg_t req;
 
 	slurm_msg_t_init(&req_msg);
+	memset(&req, 0, sizeof(req));
 	req.node_name    = node_name;
 	req.show_flags   = show_flags;
 	req_msg.msg_type = REQUEST_NODE_INFO_SINGLE;
@@ -809,6 +780,7 @@ extern int slurm_load_node_single2(node_info_msg_t **resp, char *node_name,
 	node_info_single_msg_t req;
 
 	slurm_msg_t_init(&req_msg);
+	memset(&req, 0, sizeof(req));
 	req.node_name    = node_name;
 	req.show_flags   = show_flags;
 	req_msg.msg_type = REQUEST_NODE_INFO_SINGLE;
@@ -874,6 +846,7 @@ extern int slurm_get_node_energy(char *host, uint16_t delta,
 		xfree(this_addr);
 	}
 
+	memset(&req, 0, sizeof(req));
 	req.delta        = delta;
 	req_msg.msg_type = REQUEST_ACCT_GATHER_ENERGY;
 	req_msg.data     = &req;
@@ -908,5 +881,5 @@ extern int slurm_get_node_energy(char *host, uint16_t delta,
 		break;
 	}
 
-	return SLURM_PROTOCOL_SUCCESS;
+	return SLURM_SUCCESS;
 }

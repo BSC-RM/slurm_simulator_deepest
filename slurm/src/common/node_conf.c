@@ -8,16 +8,16 @@
  *****************************************************************************
  *  Copyright (C) 2002-2007 The Regents of the University of California.
  *  Copyright (C) 2008-2010 Lawrence Livermore National Security.
- *  Copyright (C) 2010-2016 SchedMD LLC.
+ *  Copyright (C) 2010-2017 SchedMD LLC.
  *  Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
  *  Written by Morris Jette <jette1@llnl.gov> et. al.
  *  CODE-OCEC-09-009. All rights reserved.
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -33,13 +33,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -57,6 +57,7 @@
 #include <time.h>
 
 #include "src/common/assoc_mgr.h"
+#include "src/common/gres.h"
 #include "src/common/hostlist.h"
 #include "src/common/macros.h"
 #include "src/common/node_select.h"
@@ -94,7 +95,8 @@ static struct node_record *
 		_find_node_record (char *name,bool test_alias,bool log_missing);
 static void	_list_delete_config (void *config_entry);
 static int	_list_find_config (void *config_entry, void *key);
-static const char* _node_record_hash_identity (void* item);
+static void _node_record_hash_identity (void* item, const char** key,
+					uint32_t* key_len);
 
 /*
  * _build_single_nodeline_info - From the slurm.conf reader, build table,
@@ -197,8 +199,7 @@ static int _build_single_nodeline_info(slurm_conf_node_t *node_ptr,
 #endif	/* MULTIPLE_SLURMD */
 #endif	/* HAVE_FRONT_END */
 	if ((port_count != alias_count) && (port_count > 1)) {
-		error("Port count must equal that of NodeName "
-		      "records or there must be no more than one (%u != %u)",
+		error("Port count must equal that of NodeName records or there must be no more than one (%u != %u)",
 		      port_count, alias_count);
 		goto cleanup;
 	}
@@ -228,10 +229,8 @@ static int _build_single_nodeline_info(slurm_conf_node_t *node_ptr,
 				fatal("Invalid Port %s", node_ptr->port_str);
 			port = port_int;
 		}
-		/* find_node_record locks this to get the
-		 * alias so we need to unlock */
-		node_rec = find_node_record2(alias);
 
+		node_rec = find_node_record2(alias);
 		if (node_rec == NULL) {
 			node_rec = create_node_record(config_ptr, alias);
 			if ((state_val != NO_VAL) &&
@@ -239,6 +238,7 @@ static int _build_single_nodeline_info(slurm_conf_node_t *node_ptr,
 				node_rec->node_state = state_val;
 			node_rec->last_response = (time_t) 0;
 			node_rec->comm_name = xstrdup(address);
+			node_rec->cpu_bind  = node_ptr->cpu_bind;
 			node_rec->node_hostname = xstrdup(hostname);
 			node_rec->port      = port;
 			node_rec->weight    = node_ptr->weight;
@@ -348,10 +348,12 @@ static int _list_find_config (void *config_entry, void *key)
  * xhash helper function to index node_record per name field
  * in node_hash_table
  */
-static const char* _node_record_hash_identity (void* item)
+static void _node_record_hash_identity (void* item, const char** key,
+					uint32_t* key_len)
 {
 	struct node_record *node_ptr = (struct node_record *) item;
-	return node_ptr->name;
+	*key = node_ptr->name;
+	*key_len = strlen(node_ptr->name);
 }
 
 /*
@@ -520,16 +522,20 @@ extern int build_all_frontend_info (bool is_slurmd_context)
 /*
  * build_all_nodeline_info - get a array of slurm_conf_node_t structures
  *	from the slurm.conf reader, build table, and set values
- * IN set_bitmap - if true, set node_bitmap in config record (used by slurmd)
+ * IN set_bitmap - if true then set node_bitmap in config record (used by
+ *		    slurmd), false is used by slurmctld and testsuite
  * IN tres_cnt - number of TRES configured on system (used on controller side)
  * RET 0 if no error, error code otherwise
  */
-extern int build_all_nodeline_info (bool set_bitmap, int tres_cnt)
+extern int build_all_nodeline_info(bool set_bitmap, int tres_cnt)
 {
 	slurm_conf_node_t *node, **ptr_array;
 	struct config_record *config_ptr = NULL;
 	int count;
 	int i, rc, max_rc = SLURM_SUCCESS;
+	bool in_daemon;
+
+	in_daemon = run_in_daemon("slurmctld,slurmd");
 
 	count = slurm_conf_nodename_array(&ptr_array);
 	if (count == 0)
@@ -540,6 +546,7 @@ extern int build_all_nodeline_info (bool set_bitmap, int tres_cnt)
 
 		config_ptr = create_config_record();
 		config_ptr->nodes = xstrdup(node->nodenames);
+		config_ptr->cpu_bind = node->cpu_bind;
 		config_ptr->cpus = node->cpus;
 		config_ptr->boards = node->boards;
 		config_ptr->sockets = node->sockets;
@@ -557,14 +564,16 @@ extern int build_all_nodeline_info (bool set_bitmap, int tres_cnt)
 			config_ptr->tres_weights =
 				slurm_get_tres_weight_array(
 						node->tres_weights_str,
-						tres_cnt);
+						tres_cnt, true);
 		}
 
 		config_ptr->weight = node->weight;
 		if (node->feature && node->feature[0])
 			config_ptr->feature = xstrdup(node->feature);
-		if (node->gres && node->gres[0])
-			config_ptr->gres = xstrdup(node->gres);
+		if (in_daemon) {
+			config_ptr->gres = gres_plugin_name_filter(node->gres,
+							       node->nodenames);
+		}
 
 		rc = _build_single_nodeline_info(node, config_ptr);
 		max_rc = MAX(max_rc, rc);
@@ -595,18 +604,15 @@ extern int build_all_nodeline_info (bool set_bitmap, int tres_cnt)
  */
 extern struct config_record * create_config_record (void)
 {
-	struct config_record *config_ptr;
+	struct config_record *config_ptr = xmalloc(sizeof(*config_ptr));
 
 	last_node_update = time (NULL);
-	config_ptr = (struct config_record *)
-		     xmalloc (sizeof (struct config_record));
 
 	config_ptr->nodes = NULL;
 	config_ptr->node_bitmap = NULL;
 	xassert (config_ptr->magic = CONFIG_MAGIC);  /* set value */
 
-	if (list_append(config_list, config_ptr) == NULL)
-		fatal ("create_config_record: unable to allocate memory");
+	list_append(config_list, config_ptr);
 
 	return config_ptr;
 }
@@ -638,8 +644,7 @@ extern struct node_record *create_node_record (
 	new_buffer_size =
 		((int) ((new_buffer_size / BUF_SIZE) + 1)) * BUF_SIZE;
 	if (!node_record_table_ptr) {
-		node_record_table_ptr =
-			(struct node_record *) xmalloc (new_buffer_size);
+		node_record_table_ptr = xmalloc(new_buffer_size);
 	} else if (old_buffer_size != new_buffer_size) {
 		xrealloc (node_record_table_ptr, new_buffer_size);
 		/*
@@ -651,8 +656,7 @@ extern struct node_record *create_node_record (
 	node_ptr = node_record_table_ptr + (node_record_count++);
 	node_ptr->name = xstrdup(node_name);
 	if (!node_hash_table)
-		node_hash_table = xhash_init(_node_record_hash_identity,
-					     NULL, NULL, 0);
+		node_hash_table = xhash_init(_node_record_hash_identity, NULL);
 	xhash_add(node_hash_table, node_ptr);
 
 	node_ptr->config_ptr = config_ptr;
@@ -675,6 +679,7 @@ extern struct node_record *create_node_record (
 	node_ptr->ext_sensors = ext_sensors_alloc();
 	node_ptr->owner = NO_VAL;
 	node_ptr->mcs_label = NULL;
+	node_ptr->next_state = NO_VAL;
 	node_ptr->protocol_version = SLURM_MIN_PROTOCOL_VERSION;
 	xassert (node_ptr->magic = NODE_MAGIC)  /* set value */;
 	return node_ptr;
@@ -727,7 +732,7 @@ static struct node_record *_find_node_record (char *name, bool test_alias,
 	struct node_record *node_ptr;
 
 	if ((name == NULL) || (name[0] == '\0')) {
-		info("find_node_record passed NULL name");
+		info("%s: passed NULL node name", __func__);
 		return NULL;
 	}
 
@@ -737,7 +742,7 @@ static struct node_record *_find_node_record (char *name, bool test_alias,
 
 	/* try to find via hash table, if it exists */
 	if ((node_ptr =
-	     (struct node_record*) xhash_get(node_hash_table, name))) {
+	     (struct node_record*) xhash_get_str(node_hash_table, name))) {
 		xassert(node_ptr->magic == NODE_MAGIC);
 		return node_ptr;
 	}
@@ -757,7 +762,7 @@ static struct node_record *_find_node_record (char *name, bool test_alias,
 		if (!alias)
 			return NULL;
 
-		node_ptr = xhash_get(node_hash_table, alias);
+		node_ptr = xhash_get_str(node_hash_table, alias);
 		if (log_missing)
 			error("%s(%d): lookup failure for %s alias %s",
 			      __func__, __LINE__, name, alias);
@@ -891,7 +896,7 @@ extern int hostlist2bitmap (hostlist_t hl, bool best_effort, bitstr_t **bitmap)
 	*bitmap = my_bitmap;
 
 	hi = hostlist_iterator_create(hl);
-	while ((name = hostlist_next(hi)) != NULL) {
+	while ((name = hostlist_next(hi))) {
 		struct node_record *node_ptr;
 		node_ptr = _find_node_record(name, best_effort, true);
 		if (node_ptr) {
@@ -947,8 +952,7 @@ extern void rehash_node (void)
 	struct node_record *node_ptr = node_record_table_ptr;
 
 	xhash_free (node_hash_table);
-	node_hash_table = xhash_init(_node_record_hash_identity,
-				     NULL, NULL, 0);
+	node_hash_table = xhash_init(_node_record_hash_identity, NULL);
 	for (i = 0; i < node_record_count; i++, node_ptr++) {
 		if ((node_ptr->name == NULL) ||
 		    (node_ptr->name[0] == '\0'))
@@ -1005,10 +1009,6 @@ extern void cr_init_global_core_data(struct node_record *node_ptr, int node_cnt,
 
 	for (n = 0; n < node_cnt; n++) {
 		uint16_t cores;
-#ifdef HAVE_BG
-		cores = node_ptr[n].sockets;
-
-#else
 		if (fast_schedule) {
 			cores  = node_ptr[n].config_ptr->cores;
 			cores *= node_ptr[n].config_ptr->sockets;
@@ -1016,7 +1016,7 @@ extern void cr_init_global_core_data(struct node_record *node_ptr, int node_cnt,
 			cores  = node_ptr[n].cores;
 			cores *= node_ptr[n].sockets;
 		}
-#endif
+
 		cr_node_num_cores[n] = cores;
 		if (n > 0) {
 			cr_node_cores_offset[n] = cr_node_cores_offset[n-1] +
@@ -1067,18 +1067,44 @@ extern bitstr_t *cr_create_cluster_core_bitmap(int core_mult)
 	return core_bitmap;
 }
 
-/* Given the number of tasks per core and the actual number of hw threads,
- * compute how many CPUs are "visible" and, hence, usable on the node.
+/*
+ * Determine maximum number of CPUs on this node usable by a job
+ * ntasks_per_core IN - tasks-per-core to be launched by this job
+ * cpus_per_task IN - number of required  CPUs per task for this job
+ * total_cores IN - total number of cores on this node
+ * total_cpus IN - total number of CPUs on this node
+ * RET count of usable CPUs on this node usable by this job
  */
-extern int adjust_cpus_nppcu(uint16_t ntasks_per_core, uint16_t threads,
-			     int cpus)
+extern int adjust_cpus_nppcu(uint16_t ntasks_per_core, int cpus_per_task,
+			     int total_cores, int total_cpus)
 {
+	int cpus = total_cpus;
+
+//FIXME: This function ignores tasks-per-socket and tasks-per-node checks.
+// Those parameters are tested later
 	if ((ntasks_per_core != 0) && (ntasks_per_core != 0xffff) &&
-	    (threads != 0)) {
-		/* Adjust the number of CPUs according to the percentage of the
-		 * hwthreads/core being used. */
-		cpus = cpus * ntasks_per_core / threads;
+	    (cpus_per_task != 0)) {
+		cpus = MAX((total_cores * ntasks_per_core * cpus_per_task),
+			   total_cpus);
 	}
 
 	return cpus;
+}
+
+extern char *find_hostname(uint32_t pos, char *hosts)
+{
+	hostlist_t hostlist = NULL;
+	char *temp = NULL, *host = NULL;
+
+	if (!hosts || (pos == NO_VAL) || (pos == INFINITE))
+		return NULL;
+
+	hostlist = hostlist_create(hosts);
+	temp = hostlist_nth(hostlist, pos);
+	if (temp) {
+		host = xstrdup(temp);
+		free(temp);
+	}
+	hostlist_destroy(hostlist);
+	return host;
 }

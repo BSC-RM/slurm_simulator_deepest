@@ -5,11 +5,11 @@
  *  Copyright (C) 2013 SchedMD LLC
  *  Written by Morris Jette, SchedMD
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -25,13 +25,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -66,14 +66,14 @@
  * plugin_type - a string suggesting the type of the plugin or its
  * applicability to a particular form of data or method of data handling.
  * If the low-level plugin API is used, the contents of this string are
- * unimportant and may be anything.  SLURM uses the higher-level plugin
+ * unimportant and may be anything.  Slurm uses the higher-level plugin
  * interface which requires this string to be of the form
  *
  *      <application>/<method>
  *
  * where <application> is a description of the intended application of
  * the plugin (e.g., "task" for task control) and <method> is a description
- * of how this plugin satisfies that application.  SLURM will only load
+ * of how this plugin satisfies that application.  Slurm will only load
  * a task plugin if the plugin_type string has a prefix of "task/".
  *
  * plugin_version - an unsigned 32-bit integer containing the Slurm version
@@ -384,10 +384,11 @@ extern int container_p_add_cont(uint32_t job_id, uint64_t cont_id)
 }
 
 /* Add a process to a job container, create the proctrack container to add */
-extern int container_p_add_pid(uint32_t job_id, pid_t pid, uid_t uid)
+extern int container_p_join(uint32_t job_id, uid_t uid)
 {
 	stepd_step_rec_t job;
 	int rc;
+	pid_t pid = getpid();
 	DEF_TIMERS;
 
 	START_TIMER;
@@ -399,6 +400,13 @@ extern int container_p_add_pid(uint32_t job_id, pid_t pid, uid_t uid)
 	memset(&job, 0, sizeof(stepd_step_rec_t));
 	job.jmgr_pid = pid;
 	job.uid = uid;
+
+	/*
+	 * container_g_join() is called only from forked processes, set the
+	 * proctrack_forked global bool to inform proctrack/cray_aries we are
+	 * forked.
+	 */
+	proctrack_forked = true;
 	if (proctrack_g_create(&job) != SLURM_SUCCESS) {
 		error("%s: proctrack_g_create job(%u)", plugin_type,job_id);
 		return SLURM_ERROR;
@@ -421,8 +429,8 @@ extern int container_p_delete(uint32_t job_id)
 #ifdef HAVE_NATIVE_CRAY
 	rid_t resv_id = job_id;
 	DEF_TIMERS;
+	int rc;
 #endif
-	int rc = 0;
 	int i, found = -1;
 	bool job_id_change = false;
 
@@ -450,12 +458,14 @@ extern int container_p_delete(uint32_t job_id)
 	} else
 		END_TIMER3("container_p_delete: job_end_reservation took",
 			   3000000);
-#endif
 	if (rc == 0)
 		return SLURM_SUCCESS;
-
 	if ((errno == ENOENT) || (errno == EINPROGRESS) || (errno == EALREADY))
 		return SLURM_SUCCESS;	/* Not fatal error */
 	error("%s: delete(%u): %m", plugin_type, job_id);
 	return SLURM_ERROR;
+#else
+	return SLURM_SUCCESS;
+#endif
+
 }

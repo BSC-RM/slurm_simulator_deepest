@@ -1,0 +1,13 @@
+[Unit]
+Description=Cray SMW xtconsumer Slurm Helper daemon
+After=network.target munge.service
+ConditionPathExists=/home/marcodamico/slurm-port_tools/install/slurm_conf/slurmsmwd.conf
+
+[Service]
+Type=forking
+ExecStart=/home/marcodamico/slurm-port_tools/install/slurm_programs/sbin/slurmsmwd
+ExecReload=/bin/kill -HUP $MAINPID
+PIDFile=/var/run/slurmsmwd.pid
+
+[Install]
+WantedBy=multi-user.target

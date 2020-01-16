@@ -220,10 +220,10 @@ job_info_to_hv(job_info_t *job_info, HV *hv)
 	hv_store_sv(hv, "exc_node_inx", newRV_noinc((SV*)av));
 
 	STORE_FIELD(hv, job_info, exit_code, uint32_t);
-	if(job_info->features)
+	if (job_info->features)
 		STORE_FIELD(hv, job_info, features, charp);
-	if(job_info->gres)
-		STORE_FIELD(hv, job_info, gres, charp);
+	if (job_info->tres_per_node)
+		STORE_FIELD(hv, job_info, tres_per_node, charp);
 	STORE_FIELD(hv, job_info, group_id, uint32_t);
 	STORE_FIELD(hv, job_info, job_id, uint32_t);
 	STORE_FIELD(hv, job_info, job_state, uint32_t);
@@ -255,12 +255,6 @@ job_info_to_hv(job_info_t *job_info, HV *hv)
 	STORE_FIELD(hv, job_info, ntasks_per_core, uint16_t);
 	STORE_FIELD(hv, job_info, ntasks_per_node, uint16_t);
 	STORE_FIELD(hv, job_info, ntasks_per_socket, uint16_t);
-#ifdef HAVE_BG
-	slurm_get_select_jobinfo(job_info->select_jobinfo,
-				 SELECT_JOBDATA_NODE_CNT,
-				 &job_info->num_nodes);
-
-#endif
 	STORE_FIELD(hv, job_info, num_nodes, uint32_t);
 	STORE_FIELD(hv, job_info, num_cpus, uint32_t);
 	STORE_FIELD(hv, job_info, pn_min_memory, uint64_t);
@@ -362,7 +356,7 @@ hv_to_job_info(HV *hv, job_info_t *job_info)
 	}
 	FETCH_FIELD(hv, job_info, exit_code, uint32_t, TRUE);
 	FETCH_FIELD(hv, job_info, features, charp, FALSE);
-	FETCH_FIELD(hv, job_info, gres, charp, FALSE);
+	FETCH_FIELD(hv, job_info, tres_per_node, charp, FALSE);
 	FETCH_FIELD(hv, job_info, group_id, uint32_t, TRUE);
 	FETCH_FIELD(hv, job_info, job_id, uint32_t, TRUE);
 	FETCH_FIELD(hv, job_info, job_state, uint32_t, TRUE);

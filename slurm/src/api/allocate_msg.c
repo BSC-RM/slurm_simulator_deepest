@@ -7,11 +7,11 @@
  *  Written by Morris Jette <jette1@llnl.gov>.
  *  CODE-OCEC-09-009. All rights reserved.
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -27,13 +27,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -50,6 +50,7 @@
 #include "src/common/eio.h"
 #include "src/common/fd.h"
 #include "src/common/forward.h"
+#include "src/common/half_duplex.h"
 #include "src/common/net.h"
 #include "src/common/macros.h"
 #include "src/common/slurm_auth.h"
@@ -231,17 +232,77 @@ static void _handle_suspend(struct allocation_msg_thread *msg_thr,
 		(msg_thr->callback.job_suspend)(sus_msg);
 }
 
+static void _net_forward(struct allocation_msg_thread *msg_thr,
+			 slurm_msg_t *forward_msg)
+{
+	net_forward_msg_t *msg = (net_forward_msg_t *) forward_msg->data;
+	int *local, *remote;
+	eio_obj_t *e1, *e2;
+
+	local = xmalloc(sizeof(*local));
+	remote = xmalloc(sizeof(*remote));
+
+	*remote = forward_msg->conn_fd;
+
+	if (msg->port) {
+		/* connect to host and given tcp port */
+		slurm_addr_t local_addr;
+		slurm_set_addr(&local_addr, msg->port, msg->target);
+		*local = slurm_open_msg_conn(&local_addr);
+		if (*local == -1) {
+			error("%s: failed to open x11 port `%s:%d`: %m",
+			      __func__, msg->target, msg->port);
+			goto error;
+		}
+	} else if (msg->target) {
+		/* connect to local unix socket */
+		struct sockaddr_un addr;
+		socklen_t len;
+		memset(&addr, 0, sizeof(addr));
+		addr.sun_family = AF_UNIX;
+		strlcpy(addr.sun_path, msg->target, sizeof(addr.sun_path));
+		len = strlen(addr.sun_path) + 1 + sizeof(addr.sun_family);
+		if (((*local = socket(AF_UNIX, SOCK_STREAM, 0)) < 0) ||
+		    ((connect(*local, (struct sockaddr *) &addr, len)) < 0)) {
+			error("%s: failed to open x11 display on `%s`: %m",
+			      __func__, msg->target);
+			goto error;
+		}
+	}
+
+	/*
+	 * Setup is successful, let the remote end know. This must happen
+	 * before eio takes over managing the rest of the traffic on the port.
+	 */
+	slurm_send_rc_msg(forward_msg, SLURM_SUCCESS);
+
+	/* prevent the upstream call path from closing the connection */
+	forward_msg->conn_fd = -1;
+
+	e1 = eio_obj_create(*local, &half_duplex_ops, remote);
+	e2 = eio_obj_create(*remote, &half_duplex_ops, local);
+
+	/* setup eio to handle both sides of the connection now */
+	eio_new_obj(msg_thr->handle, e1);
+	eio_new_obj(msg_thr->handle, e2);
+
+	return;
+
+error:
+	slurm_send_rc_msg(forward_msg, SLURM_ERROR);
+	xfree(local);
+	xfree(remote);
+}
+
 static void
 _handle_msg(void *arg, slurm_msg_t *msg)
 {
-	char *auth_info = slurm_get_auth_info();
 	struct allocation_msg_thread *msg_thr =
 		(struct allocation_msg_thread *)arg;
 	uid_t req_uid;
 	uid_t uid = getuid();
 
-	req_uid = g_slurm_auth_get_uid(msg->auth_cred, auth_info);
-	xfree(auth_info);
+	req_uid = g_slurm_auth_get_uid(msg->auth_cred);
 
 	if ((req_uid != slurm_uid) && (req_uid != 0) && (req_uid != uid)) {
 		error ("Security violation, slurm message from uid %u",
@@ -268,6 +329,10 @@ _handle_msg(void *arg, slurm_msg_t *msg)
 	case SRUN_REQUEST_SUSPEND:
 		_handle_suspend(msg_thr, msg);
 		break;
+	case SRUN_NET_FORWARD:
+		debug2("received network forwarding RPC");
+		_net_forward(msg_thr, msg);
+		break;
 	default:
 		error("%s: received spurious message type: %u",
 		      __func__, msg->msg_type);
@@ -275,4 +340,3 @@ _handle_msg(void *arg, slurm_msg_t *msg)
 	}
 	return;
 }
-

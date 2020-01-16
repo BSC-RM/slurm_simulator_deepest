@@ -6,11 +6,11 @@
  *  Written by Morris Jette <jette1@llnl.gov>.
  *  CODE-OCEC-09-009. All rights reserved.
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -26,13 +26,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -87,50 +87,6 @@ static unit_names_t un[] = {
 	{"week",	4,	(7*24*60*60)},
 	{NULL,		0,	0}
 };
-
-/* _get_dash()
- *
- * Check if the string has a - and
- * if it does replace it by a space.
- */
-static uint16_t
-_get_dash(char *s)
-{
-	int cc;
-
-	cc = 0;
-	while (*s) {
-		if (*s == '-') {
-			++cc;
-			*s = ' ';
-		}
-		++s;
-	}
-
-	return cc;
-}
-
-/* _get_num_colon()
- *
- * Count the number of colons and
- * replace them by spaces.
- */
-static uint16_t
-_get_num_colon(char *s)
-{
-	int cc;
-
-	cc = 0;
-	while (*s) {
-		if (*s == ':') {
-			++cc;
-			*s = ' ';
-		}
-		++s;
-	}
-
-	return cc;
-}
 
 /* _is_valid_timespec()
  *
@@ -198,7 +154,7 @@ _is_valid_timespec(const char *s)
  * delta (out): delta in seconds
  * RET: -1 on error, 0 otherwise
  */
-static int _get_delta(char *time_str, int *pos, long *delta)
+static int _get_delta(const char *time_str, int *pos, long *delta)
 {
 	int i, offset;
 	long cnt = 0;
@@ -244,8 +200,8 @@ static int _get_delta(char *time_str, int *pos, long *delta)
  * hour, minute, second (out): numberic values
  * RET: -1 on error, 0 otherwise
  */
-static int
-_get_time(char *time_str, int *pos, int *hour, int *minute, int * second)
+static int _get_time(const char *time_str, int *pos, int *hour, int *minute,
+		     int *second)
 {
 	int hr, min, sec;
 	int offset = *pos;
@@ -334,7 +290,8 @@ _get_time(char *time_str, int *pos, int *hour, int *minute, int * second)
  * month, mday, year (out): numberic values
  * RET: -1 on error, 0 otherwise
  */
-static int _get_date(char *time_str, int *pos, int *month, int *mday, int *year)
+static int _get_date(const char *time_str, int *pos, int *month, int *mday,
+		     int *year)
 {
 	int mon, day, yr;
 	int offset = *pos;
@@ -457,7 +414,7 @@ static int _get_date(char *time_str, int *pos, int *month, int *mday, int *year)
  * NOTE: by default this will look into the future for the next time.
  * if you want to look in the past set the past flag.
  */
-extern time_t parse_time(char *time_str, int past)
+extern time_t parse_time(const char *time_str, int past)
 {
 	int    hour = -1, minute = -1, second = 0;
 	int    month = -1, mday = -1, year = -1;
@@ -634,7 +591,6 @@ extern time_t parse_time(char *time_str, int past)
 	res_tm.tm_mday  = mday;
 	res_tm.tm_mon   = month;
 	res_tm.tm_year  = year;
-	res_tm.tm_isdst = -1;
 
 /* 	printf("%d/%d/%d %d:%d\n",month+1,mday,year,hour,minute); */
 	if ((ret_time = slurm_mktime(&res_tm)) != -1)
@@ -756,20 +712,7 @@ slurm_make_time_str (time_t *time, char *string, int size)
  */
 extern int time_str2secs(const char *string)
 {
-	uint16_t has_dash;
-	uint16_t num_colon;
-	char days[24] = {0};
-	char hours[24] = {0};
-	char minutes[24] = {0};
-	char seconds[24] = {0};
-	char *timestr;
-	char *p;
-	int d;
-	int h;
-	int m;
-	int s;
-	int n;
-	int cc;
+	int d = 0, h = 0, m = 0, s = 0;
 
 	if ((string == NULL) || (string[0] == '\0'))
 		return NO_VAL;	/* invalid input */
@@ -783,64 +726,32 @@ extern int time_str2secs(const char *string)
 	if (! _is_valid_timespec(string))
 		return NO_VAL;
 
-	timestr = p = strdup(string);
-	if (timestr == NULL)
-		return NO_VAL;
-
-	d = h = m = s = 0;
-
-	has_dash  = _get_dash(timestr);
-	num_colon = _get_num_colon(timestr);
-
-	if (has_dash) {
-		/* days- OR days-hours
-		 */
-		sscanf(timestr, "%s%s%n", days, hours, &n);
-		timestr = timestr + n;
-		d = atoi(days) * 86400;
-		h = atoi(hours) * 3600;
-
-		if (num_colon == 1) {
-			/* days-hours:minutes
+	if (xstrchr(string, '-')) {
+		/* days-[hours[:minutes[:seconds]]] */
+		sscanf(string, "%d-%d:%d:%d", &d, &h, &m, &s);
+		d *= 86400;
+		h *= 3600;
+		m *= 60;
+	} else {
+		if (sscanf(string, "%d:%d:%d", &h, &m, &s) == 3) {
+			/* hours:minutes:seconds */
+			h *= 3600;
+			m *= 60;
+		} else {
+			/*
+			 * minutes[:seconds]
+			 * h is minutes here and m is seconds due
+			 * to sscanf parsing left to right
 			 */
-			sscanf(timestr, "%s", minutes);
-			m = atoi(minutes) * 60;
-		} else if (num_colon == 2) {
-			/* days-hours:minutes:seconds
-			 */
-			sscanf(timestr, "%s%s", minutes, seconds);
-			m = atoi(minutes) * 60;
-			s = atoi(seconds);
+			s = m;
+			m = h * 60;
+			h = 0;
 		}
-		goto bye;
 	}
 
-	/* minutes
-	 */
-	if (num_colon == 0) {
-		m = atoi(timestr) * 60;
-	} else if (num_colon == 1) {
-		/* minutes:seconds
-		 */
-		sscanf(timestr, "%s%s", minutes, seconds);
-		m = atoi(minutes) * 60;
-		s = atoi(seconds);
-	} else if (num_colon == 2) {
-		/* hours:minutes:seconds
-		 */
-		sscanf(timestr, "%s%s%s", hours, minutes, seconds);
-		h = atoi(hours) * 3600;
-		m = atoi(minutes) * 60;
-		s = atoi(seconds);
-	}
-
-bye:
-	cc = d + h + m + s;
-	free(p);
-
-	return cc;
-
+	return (d + h + m + s);
 }
+
 extern int time_str2mins(const char *string)
 {
 	int i = time_str2secs(string);

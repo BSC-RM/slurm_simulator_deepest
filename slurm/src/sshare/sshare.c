@@ -7,11 +7,11 @@
  *  Written by Danny Auble <da@llnl.gov>
  *  CODE-OCEC-09-009. All rights reserved.
  *
- *  This file is part of SLURM, a resource management program.
+ *  This file is part of Slurm, a resource management program.
  *  For details, see <https://slurm.schedmd.com/>.
  *  Please also read the included file: DISCLAIMER.
  *
- *  SLURM is free software; you can redistribute it and/or modify it under
+ *  Slurm is free software; you can redistribute it and/or modify it under
  *  the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
  *  any later version.
@@ -27,13 +27,13 @@
  *  version.  If you delete this exception statement from all source files in
  *  the program, then also delete it here.
  *
- *  SLURM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *  Slurm is distributed in the hope that it will be useful, but WITHOUT ANY
  *  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  *  FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  *  details.
  *
  *  You should have received a copy of the GNU General Public License along
- *  with SLURM; if not, write to the Free Software Foundation, Inc.,
+ *  with Slurm; if not, write to the Free Software Foundation, Inc.,
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA.
 \*****************************************************************************/
 
@@ -51,7 +51,7 @@ static int      _get_info(shares_request_msg_t *shares_req,
 static int      _addto_name_char_list(List char_list, char *names, bool gid);
 static int 	_single_cluster(shares_request_msg_t *req_msg);
 static int 	_multi_cluster(shares_request_msg_t *req_msg);
-static char *   _convert_to_name(int id, bool gid);
+static char *   _convert_to_name(uint32_t id, bool is_gid);
 static void     _print_version( void );
 static void	_usage(void);
 static void     _help_format_msg(void);
@@ -322,7 +322,7 @@ static int _get_info(shares_request_msg_t *shares_req,
 		break;
 	}
 
-	return SLURM_PROTOCOL_SUCCESS;
+	return SLURM_SUCCESS;
 }
 
 /* returns number of objects added to list */
@@ -360,7 +360,8 @@ static int _addto_name_char_list(List char_list, char *names, bool gid)
 					memcpy(name, names+start, (i-start));
 					//info("got %s %d", name, i-start);
 					if (isdigit((int) *name)) {
-						int id = atoi(name);
+						uint32_t id = strtoul(name,
+								      NULL, 10);
 						xfree(name);
 						name = _convert_to_name(
 							id, gid);
@@ -395,7 +396,7 @@ static int _addto_name_char_list(List char_list, char *names, bool gid)
 			memcpy(name, names+start, (i-start));
 
 			if (isdigit((int) *name)) {
-				int id = atoi(name);
+				uint32_t id = strtoul(name, NULL, 10);
 				xfree(name);
 				name = _convert_to_name(id, gid);
 			}
@@ -416,21 +417,21 @@ static int _addto_name_char_list(List char_list, char *names, bool gid)
 	return count;
 }
 
-static char *_convert_to_name(int id, bool gid)
+static char *_convert_to_name(uint32_t id, bool is_gid)
 {
 	char *name = NULL;
 
-	if (gid) {
+	if (is_gid) {
 		struct group *grp;
-		if (!(grp=getgrgid(id))) {
-			fprintf(stderr, "Invalid group id: %s\n", name);
+		if (!(grp = getgrgid((gid_t) id))) {
+			fprintf(stderr, "Invalid group id: %u\n", id);
 			exit(1);
 		}
 		name = xstrdup(grp->gr_name);
 	} else {
 		struct passwd *pwd;
-		if (!(pwd=getpwuid(id))) {
-			fprintf(stderr, "Invalid user id: %s\n", name);
+		if (!(pwd = getpwuid((uid_t) id))) {
+			fprintf(stderr, "Invalid user id: %u\n", id);
 			exit(1);
 		}
 		name = xstrdup(pwd->pw_name);
@@ -464,8 +465,8 @@ Usage:  sshare [OPTION]                                                    \n\
     -M or --cluster=names  clusters to issue commands to.                  \n\
                            NOTE: SlurmDBD must be up.                      \n\
     -n or --noheader       omit header from output                         \n\
-    -o or --format=        Comma separated list of fields. (use            \n\
-                           (\"--helpformat\" for a list of available fields).\n\
+    -o or --format=        Comma separated list of fields (use             \n\
+                           \"--helpformat\" for a list of available fields).\n\
     -p or --parsable       '|' delimited output with a trailing '|'        \n\
     -P or --parsable2      '|' delimited output without a trailing '|'     \n\
     -u or --users=         display specific users (comma separated list)   \n\
