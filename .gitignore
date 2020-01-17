@@ -1,2 +1,6 @@
 autogen.output.txt
+/install/slurm_programs/bin/
+/install/slurm_programs/sbin/
+/install/slurm_varios/lib/
+/install/slurm_varios/lib/slurm/
 slurm_configure.log
