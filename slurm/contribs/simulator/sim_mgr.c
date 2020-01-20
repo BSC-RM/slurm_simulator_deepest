@@ -524,20 +524,6 @@ time_mgr(void *arg) {
 		sem_post(slurm_sem);
 		sem_wait(sim_sem);
 
-/*		sem_wait(mutexserver);
-		//info("unlocking next loop");
-		*global_sync_flag = 1;
-		sem_post(mutexserver);
-		while(1) {
-			sem_wait(mutexserver);
-			if (*global_sync_flag == '*' || *global_sync_flag == 3) {
-				sem_post(mutexserver);
-				break;
-			}
-			sem_post(mutexserver);
-                	usleep(sync_loop_wait_time);
-		}
-*/
 		/*
 		 * Time throttling added but currently unstable; for now, run
 		 * with only 1 second intervals
@@ -795,10 +781,10 @@ void generate_job_desc_msg(job_desc_msg_t* dmesg, job_trace_t* jobd) {
 		} else if (strlen(jobd->manifest_filename)>1) {
 			//dmesg->name=xstrdup(jobd->manifest_filename+1);
 		}
-		if (jobd->wait_component_job_time && jobd->wait_component_job_time != -1) {
-			dmesg->delay = ceil(jobd->wait_component_job_time / 60); //In minutes
-			printf("Delayed jobpack compont %d by %d\n", jobd->component_job_id, dmesg->delay);
-		}
+	//	if (jobd->wait_component_job_time && jobd->wait_component_job_time != -1) {
+	//		dmesg->delay = ceil(jobd->wait_component_job_time / 60); //In minutes
+	//		printf("Delayed jobpack compont %d by %d\n", jobd->component_job_id, dmesg->delay);
+	//	}
 }
 
 void
@@ -1092,7 +1078,8 @@ init_trace_info(void *ptr, int op) {
 		*new_trace_record = *(job_trace_t *)ptr;
 
 		if (count == 0) {
-			sim_start_point = new_trace_record->submit - 60;
+			sim_start_point = new_trace_record->submit;
+			printf("Time starting point %d", sim_start_point);
 			/*first_submit = new_trace_record->submit;*/
 		}
 

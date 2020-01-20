@@ -219,8 +219,6 @@ static pthread_mutex_t sched_cnt_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pid_t	slurmctld_pid;
 static char *	slurm_conf_filename;
 
-//FILE *stats = NULL;
-
 #ifdef SLURM_SIMULATOR
 int total_log_jobs=0;
 int backfill_interval=30; //initialize here global variable backfill interval to the default value
@@ -788,10 +786,6 @@ int main(int argc, char **argv)
 		/*
 		 * process slurm background activities, could run as pthread
 		 */
-		stats = fopen("slurmctld_stats", "w");
-		if (stats == NULL)
-			error("Cannot open file for reporting statistics!");
-
 		_slurmctld_background(NULL);
 
 		/* termination of controller */

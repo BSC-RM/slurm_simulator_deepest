@@ -183,6 +183,7 @@ typedef struct backfill_user_usage {
 } bf_user_usage_t;
 
 #ifdef SLURM_SIMULATOR
+static long long bf_sched_total_time = 0;
 static long bf_sched_counter = 0;
 static long bf_sched_checked = 0;
 static long bf_sched_queue_len = 0;
@@ -1001,46 +1002,6 @@ static void _do_diag_stats(struct timeval *tv1, struct timeval *tv2)
 	debug("stats: bf total time %lld, counter %ld, number of jobs: tried %ld, in queue %ld, backfilled %ld", bf_sched_total_time, bf_sched_counter, bf_sched_checked, bf_sched_queue_len, bf_sched_backfilled);
 #endif
 }
-
-static int _list_find_all(void *x, void *key)
-{
-	return 1;
-}
-/*
-#ifdef SLURM_SIMULATOR
-int
-open_global_sync_sem() {
-	int iter = 0;
-	while(mutexserver == SEM_FAILED && iter < 10) {
-		mutexserver = sem_open(SEM_NAME, 0, 0644, 0);
-		if(mutexserver == SEM_FAILED) sleep(1);
-		++iter;
-	}
-
-	if(mutexserver == SEM_FAILED)
-		return -1;
-	else
-		return 0;
-}
-
-void
-perform_global_sync() {
-	while(*global_sync_flag < 2 || *global_sync_flag > 4) {
-		usleep(100000);
-	}
-	sem_wait(mutexserver);
-	*global_sync_flag += 1;
-	if(*global_sync_flag > 4) {*global_sync_flag = 1;}
-	sem_post(mutexserver);
-}
-
-void
-close_global_sync_sem() {
-	if(mutexserver != SEM_FAILED) sem_close(mutexserver);
-}
-#endif
-
-*/
 
 #ifdef SLURM_SIMULATOR
 

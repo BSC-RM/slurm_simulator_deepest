@@ -155,7 +155,6 @@ uint32_t *fini_job_id = NULL;
 pthread_mutex_t fini_job_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t tres_mutex     = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t  tres_cond      = PTHREAD_COND_INITIALIZER;
-int waiting_epilog_msgs = 0;
 
 /*
  * count of active threads
@@ -460,6 +459,13 @@ main (int argc, char **argv)
 	_install_fork_handlers();
 	list_install_fork_handlers();
 	slurm_conf_install_fork_handlers();
+
+#ifdef SLURM_SIMULATOR
+	if (open_global_sync_sem() == -1)
+		debug("Error opening mutexserver");
+    _spawn_simulator_helper();
+#endif
+
 	record_launched_jobs();
 
 	run_script_health_check();
@@ -470,11 +476,6 @@ main (int argc, char **argv)
 
 	slurm_thread_create_detached(NULL, _registration_engine, NULL);
 
-#ifdef SLURM_SIMULATOR
-	if (open_global_sync_sem() == -1)
-		debug("Error opening mutexserver");
-       _spawn_simulator_helper();
-#endif
 	_msg_engine();
 
 	/*
@@ -549,14 +550,13 @@ _registration_engine(void *arg)
 		sleep(1);
 	}
 
-	_decrement_thd_count();
 	debug("FINISH _registration_engine call.. registration time %ld\n", sent_reg_time);
 #ifdef SLURM_SIMULATOR
 	debug("call signal_sim_mgr..");
 	//signal_sim_mgr();
 	notify_sim_mgr(); /*** ANA: Replacing signals for slurmd registration */
 #endif	
-
+	_decrement_thd_count();
 	return NULL;
 }
 
@@ -713,9 +713,7 @@ _simulator_helper(void *arg)
 			head_sim_completed_jobs = aux;
 			total_sim_events--;
 			info("SIM: Sending JOB_COMPLETE_BATCH_SCRIPT for job %d", event_jid);
-			pthread_mutex_unlock(&simulator_mutex);
 			if(_send_complete_batch_script_msg(event_jid, SLURM_SUCCESS, 0) == SLURM_SUCCESS) { 
-				pthread_mutex_lock(&simulator_mutex);
 				pthread_mutex_lock(&epilogs_mutex); //we are in the same thread here
 				waiting_epilog_msgs++;
 				pthread_mutex_unlock(&epilogs_mutex);
@@ -1003,6 +1001,7 @@ send_registration_msg(uint32_t status, bool startup)
 		if (resp_msg.msg_type != RESPONSE_SLURM_RC) {
 			/* RESPONSE_SLURM_RC freed by _handle_node_reg_resp() */
 			slurm_free_msg_data(resp_msg.msg_type, resp_msg.data);
+			debug("There is some problem");
 		}
 		if (errno) {
 			ret_val = errno;

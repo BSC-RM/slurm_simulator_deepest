@@ -263,10 +263,6 @@ int total_epilog_complete_jobs=0; /* ANA: keeps track how many jobs from total j
 static __thread bool drop_priv = false;
 #endif
 
-int finished_jobs_waiting_for_epilog=0;
-int total_finished_jobs = 0;
-
-int total_epilog_complete_jobs=0; /* ANA: keeps track how many jobs from total jobs in the log have finished. */
 /*
  * slurmctld_req  - Process an individual RPC request
  * IN/OUT msg - the request message, data associated with the message is freed
@@ -429,10 +425,10 @@ void slurmctld_req(slurm_msg_t *msg, connection_arg_t *arg)
 	case MESSAGE_NODE_REGISTRATION_STATUS:
 		_slurm_rpc_node_registration(msg, 0);
 		break;
-       	case MESSAGE_SIM_HELPER_CYCLE:
-               _slurm_rpc_sim_helper_cycle(msg);
-               //slurm_free_sim_helper_msg(msg->data);
-               break;
+    case MESSAGE_SIM_HELPER_CYCLE:
+		_slurm_rpc_sim_helper_cycle(msg);
+		//slurm_free_sim_helper_msg(msg->data);
+		break;
 	case REQUEST_JOB_ALLOCATION_INFO:
 		_slurm_rpc_job_alloc_info(msg);
 		break;
@@ -2367,14 +2363,14 @@ static void  _slurm_rpc_epilog_complete(slurm_msg_t *msg,
 		 * calls can be very high for large machine or large number
 		 * of managed jobs.
 		 */
-		if (!LOTS_OF_AGENTS && !defer_sched)
-			queue_job_scheduler();
 #else
+		if (!LOTS_OF_AGENTS && !defer_sched)
 			(void) schedule(0);	/* Has own locking */
 		schedule_node_save();		/* Has own locking */
 		schedule_job_save();		/* Has own locking */
 #endif
 	}
+#ifdef SLURM_SIMULATOR
 	info("SIM: Processing RPC: MESSAGE_EPILOG_COMPLETE for jobid %d", epilog_msg->job_id);
 	slurm_send_rc_msg(msg, SLURM_SUCCESS);
 	pthread_mutex_lock(&lock_remaining_epilogs);
