@@ -1,7 +1,0 @@
-removing stale config.status.
-removing old config.log.
-now run ./configure to configure slurm for your environment.
-
-NOTE: This script has most likely just modified files that are under
-      version control.  Make sure that you really want these changes
-      applied to the repository before you run "git commit".
