@@ -1,10 +1,10 @@
-# Makefile for priority/multifactor plugin
+# Makefile for priority/multifactor_energy plugin
 
 AUTOMAKE_OPTIONS = foreign
 
 PLUGIN_FLAGS = -module -avoid-version --export-dynamic
 
-AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/src/common
+AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/src/common -I$(LRZ_MODEL)/include
 
 pkglib_LTLIBRARIES = priority_multifactor_energy.la
 

@@ -14,7 +14,7 @@
 
 @SET_MAKE@
 
-# Makefile for priority/multifactor plugin
+# Makefile for priority/multifactor_energy plugin
 
 VPATH = @srcdir@
 am__is_gnu_make = { \
@@ -91,7 +91,7 @@ POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
 target_triplet = @target@
-subdir = src/plugins/priority/multifactor
+subdir = src/plugins/priority/multifactor_energy
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/auxdir/ax_check_compile_flag.m4 \
 	$(top_srcdir)/auxdir/ax_check_zlib.m4 \
@@ -174,19 +174,19 @@ am__uninstall_files_from_dir = { \
   }
 am__installdirs = "$(DESTDIR)$(pkglibdir)"
 LTLIBRARIES = $(pkglib_LTLIBRARIES)
-priority_multifactor_la_DEPENDENCIES =
-am_priority_multifactor_la_OBJECTS = priority_multifactor.lo \
-	fair_tree.lo
-priority_multifactor_la_OBJECTS =  \
-	$(am_priority_multifactor_la_OBJECTS)
+priority_multifactor_energy_la_DEPENDENCIES =
+am_priority_multifactor_energy_la_OBJECTS =  \
+	priority_multifactor_energy.lo fair_tree.lo
+priority_multifactor_energy_la_OBJECTS =  \
+	$(am_priority_multifactor_energy_la_OBJECTS)
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
 am__v_lt_0 = --silent
 am__v_lt_1 = 
-priority_multifactor_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
+priority_multifactor_energy_la_LINK = $(LIBTOOL) $(AM_V_lt) --tag=CC \
 	$(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=link $(CCLD) \
-	$(AM_CFLAGS) $(CFLAGS) $(priority_multifactor_la_LDFLAGS) \
-	$(LDFLAGS) -o $@
+	$(AM_CFLAGS) $(CFLAGS) \
+	$(priority_multifactor_energy_la_LDFLAGS) $(LDFLAGS) -o $@
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
 am__v_P_0 = false
@@ -221,8 +221,8 @@ AM_V_CCLD = $(am__v_CCLD_@AM_V@)
 am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
-SOURCES = $(priority_multifactor_la_SOURCES)
-DIST_SOURCES = $(priority_multifactor_la_SOURCES)
+SOURCES = $(priority_multifactor_energy_la_SOURCES)
+DIST_SOURCES = $(priority_multifactor_energy_la_SOURCES)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -495,13 +495,13 @@ top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 AUTOMAKE_OPTIONS = foreign
 PLUGIN_FLAGS = -module -avoid-version --export-dynamic
-AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/src/common
-pkglib_LTLIBRARIES = priority_multifactor.la
+AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/src/common -I$(LRZ_MODEL)/include
+pkglib_LTLIBRARIES = priority_multifactor_energy.la
 
 # Null priority logging plugin.
-priority_multifactor_la_SOURCES = priority_multifactor.c fair_tree.c fair_tree.h priority_multifactor.h
-priority_multifactor_la_LDFLAGS = $(PLUGIN_FLAGS)
-priority_multifactor_la_LIBADD = -lm
+priority_multifactor_energy_la_SOURCES = priority_multifactor_energy.c fair_tree.c fair_tree.h priority_multifactor_energy.h
+priority_multifactor_energy_la_LDFLAGS = $(PLUGIN_FLAGS)
+priority_multifactor_energy_la_LIBADD = -lm $(PROTOBUF) -L$(LRZ_MODEL)/lib -lmodel
 all: all-am
 
 .SUFFIXES:
@@ -515,9 +515,9 @@ $(srcdir)/Makefile.in: @MAINTAINER_MODE_TRUE@ $(srcdir)/Makefile.am  $(am__confi
 	      exit 1;; \
 	  esac; \
 	done; \
-	echo ' cd $(top_srcdir) && $(AUTOMAKE) --foreign src/plugins/priority/multifactor/Makefile'; \
+	echo ' cd $(top_srcdir) && $(AUTOMAKE) --foreign src/plugins/priority/multifactor_energy/Makefile'; \
 	$(am__cd) $(top_srcdir) && \
-	  $(AUTOMAKE) --foreign src/plugins/priority/multifactor/Makefile
+	  $(AUTOMAKE) --foreign src/plugins/priority/multifactor_energy/Makefile
 Makefile: $(srcdir)/Makefile.in $(top_builddir)/config.status
 	@case '$?' in \
 	  *config.status*) \
@@ -571,8 +571,8 @@ clean-pkglibLTLIBRARIES:
 	  rm -f $${locs}; \
 	}
 
-priority_multifactor.la: $(priority_multifactor_la_OBJECTS) $(priority_multifactor_la_DEPENDENCIES) $(EXTRA_priority_multifactor_la_DEPENDENCIES) 
-	$(AM_V_CCLD)$(priority_multifactor_la_LINK) -rpath $(pkglibdir) $(priority_multifactor_la_OBJECTS) $(priority_multifactor_la_LIBADD) $(LIBS)
+priority_multifactor_energy.la: $(priority_multifactor_energy_la_OBJECTS) $(priority_multifactor_energy_la_DEPENDENCIES) $(EXTRA_priority_multifactor_energy_la_DEPENDENCIES) 
+	$(AM_V_CCLD)$(priority_multifactor_energy_la_LINK) -rpath $(pkglibdir) $(priority_multifactor_energy_la_OBJECTS) $(priority_multifactor_energy_la_LIBADD) $(LIBS)
 
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
@@ -581,7 +581,7 @@ distclean-compile:
 	-rm -f *.tab.c
 
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/fair_tree.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/priority_multifactor.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/priority_multifactor_energy.Plo@am__quote@
 
 .c.o:
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(COMPILE) -MT $@ -MD -MP -MF $(DEPDIR)/$*.Tpo -c -o $@ $<

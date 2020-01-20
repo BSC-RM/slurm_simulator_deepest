@@ -38,7 +38,7 @@
 #ifndef _PRIORITY_MULTIFACTOR_FAIR_TREE_H
 #define _PRIORITY_MULTIFACTOR_FAIR_TREE_H
 
-#include "priority_multifactor.h"
+#include "priority_multifactor_energy.h"
 
 /* Fair Tree code called from the decay thread loop */
 extern void fair_tree_decay(List jobs, time_t start);
