@@ -13,7 +13,7 @@ ReturnToService=1
 
 SlurmctldPort=TOKEN_SLURMCTLD_PORT
 SlurmdPort=TOKEN_SLURMD_PORT
-CryptoType=crypto/openssl
+CredType=cred/none
 JobCredentialPrivateKey=TOKEN_SLURM_USER_PATH/slurm_conf/slurm.key
 JobCredentialPublicCertificate=TOKEN_SLURM_USER_PATH/slurm_conf/slurm.cert
 #CryptoType=crypto/munge
