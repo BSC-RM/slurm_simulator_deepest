@@ -1709,6 +1709,13 @@ extern int parse_long_format( char* format_long )
 							field_size,
 							right_justify,
 							suffix );
+//***************** Zia Edit Begin *******************************
+                else if (!xstrcasecmp(token, "workflowidset"))
+				job_format_add_workflow_id_set(params.format_list,
+							field_size,
+							right_justify,
+							suffix );
+//***************** Zia Edit End *******************************
 			else {
 				job_format_add_invalid( params.format_list,
 							field_size,

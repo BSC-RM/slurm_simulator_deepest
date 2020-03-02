@@ -899,6 +899,22 @@ int _print_job_pack_job_id_set(job_info_t * job, int width, bool right,
 		printf("%s", suffix);
 	return SLURM_SUCCESS;
 }
+//***************** Zia Edit Begin *******************************
+int _print_job_workflow_id_set(job_info_t * job, int width, bool right,
+			  char* suffix)
+{
+	if (job == NULL)	/* Print the Header instead */
+		_print_str("WORKFLOW_ID_SET", width, right, true);
+	else if (job->workflow_id_set == NULL)
+		_print_str("N/A", width, right, true);
+	else
+		_print_str(job->workflow_id_set, width, right, true);
+
+	if (suffix)
+		printf("%s", suffix);
+	return SLURM_SUCCESS;
+}
+//***************** Zia Edit End *******************************
 int _print_job_time_used(job_info_t * job, int width, bool right,
 			   char* suffix)
 {

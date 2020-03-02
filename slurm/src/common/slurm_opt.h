@@ -175,6 +175,9 @@ enum {
 	LONG_OPT_WCKEY,
 	LONG_OPT_WRAP,
 	LONG_OPT_X11,
+//***************** Zia Edit Begin *******************************
+    LONG_OPT_DELAY,
+//***************** Zia Edit End *******************************
 	LONG_OPT_ENUM_END
 };
 
@@ -361,6 +364,9 @@ typedef struct slurm_options {
 	bool reboot;			/* --reboot			*/
 
 	time_t begin;			/* --begin			*/
+//***************** Zia Edit Begin *******************************
+	uint32_t delay;			/* --delay in minutes		*/
+//***************** Zia Edit End *******************************
 	char *extra;			/* unused			*/
 	uint16_t mail_type;		/* --mail-type			*/
 	char *mail_user;		/* --mail-user			*/

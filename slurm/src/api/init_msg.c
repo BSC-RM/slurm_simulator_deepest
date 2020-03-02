@@ -63,6 +63,9 @@ void slurm_init_job_desc_msg(job_desc_msg_t * job_desc_msg)
 	job_desc_msg->cpu_freq_max	= NO_VAL;
 	job_desc_msg->cpu_freq_gov	= NO_VAL;
 	job_desc_msg->cpus_per_task	= NO_VAL16;
+	//***************** Zia Edit Begin *******************************
+    job_desc_msg->delay         = NO_VAL;
+	//***************** Zia Edit End *******************************
 	job_desc_msg->delay_boot	= NO_VAL;
 	job_desc_msg->group_id		= NO_VAL;
 	job_desc_msg->job_id		= NO_VAL;

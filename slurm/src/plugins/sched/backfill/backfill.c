@@ -82,6 +82,9 @@
 #include "src/common/slurm_protocol_api.h"
 #include "src/common/xmalloc.h"
 #include "src/common/xstring.h"
+//***************** Zia Edit Begin *******************************
+#include "src/common/uid.h"
+//***************** Zia Edit End *******************************
 
 #include "src/slurmctld/acct_policy.h"
 #include "src/slurmctld/burst_buffer.h"
@@ -2220,6 +2223,10 @@ next_task:
 		FREE_NULL_BITMAP(avail_bitmap);
 		FREE_NULL_BITMAP(exc_core_bitmap);
 		start_res = MAX(later_start, pack_time);
+//***************** Zia Edit Begin *******************************
+		if(job_ptr->delayed_workflow && job_ptr->details->delay != NO_VAL)
+		    start_res += job_ptr->details->delay*60; //add the delay time to start_res for checking
+//***************** Zia Edit End *******************************
 		resv_end = 0;
 		later_start = 0;
 		/* Determine impact of any advance reservations */
@@ -3258,7 +3265,10 @@ static time_t _pack_start_compute(pack_job_map_t *map, uint32_t exclude_job_id)
 
 	iter = list_iterator_create(map->pack_job_list);
 	while ((rec = (pack_job_rec_t *) list_next(iter))) {
-		if (rec->job_id == exclude_job_id)
+//***************** Zia Edit Begin *******************************
+	  //skip the start time of this job as it is supposed to be delayed in a workflow
+		if (rec->job_id == exclude_job_id || (rec->job_id != map->pack_job_id && rec->job_ptr->delayed_workflow))
+//***************** Zia Edit End *******************************
 			continue;
 		latest_start = MAX(latest_start, rec->latest_start);
 	}
@@ -3519,6 +3529,261 @@ static bool _pack_job_limit_check(pack_job_map_t *map, time_t now)
 	return runnable;
 }
 
+//***************** Zia Edit Begin *******************************
+/*
+ * Delete the created reservations as some jobs in a job pack have failed
+ */
+
+static void _delete_reservations(pack_job_map_t *map)
+{
+	ListIterator iter;
+	struct job_record *job_ptr;
+	pack_job_rec_t *rec;
+	
+	iter = list_iterator_create(map->pack_job_list);
+	
+	while ((rec = (pack_job_rec_t *) list_next(iter))) {
+	    job_ptr = rec->job_ptr;
+	    
+	    if(job_ptr->resv_name)
+	    {
+		  job_ptr->resv_id = 0;
+		  job_ptr->resv_ptr = NULL;
+		  reservation_name_msg_t t;
+		  t.name = job_ptr->resv_name;
+		  delete_resv(&t);
+		  xfree(job_ptr->resv_name);
+	    }
+	}
+  
+}
+
+/*
+ * Test the existance of workflow by cheking delay parameter. if found create reservations for each 
+ * job and exit.
+ */
+
+static int _test_workflow(pack_job_map_t *map, node_space_map_t *node_space)
+{
+	struct job_record *job_ptr, *new_pack_head;
+	bitstr_t *avail_bitmap = NULL, *exc_core_bitmap = NULL;
+	pack_job_rec_t *rec, *prev_rec;
+	ListIterator iter;
+	int rc = SLURM_SUCCESS;
+	bool resv_overlap = false;
+	
+	//check for delay parameter
+	iter = list_iterator_create(map->pack_job_list);
+	rec = (pack_job_rec_t *) list_next(iter);
+	  
+	if(!rec || !rec->job_ptr->delayed_workflow || rec->job_ptr->resv_id){
+	  list_iterator_destroy(iter);
+	  return -2; // do not return slurm success or slurm error. Means it is either not a workflow 
+		      //or it has been scheduled with reservations, so treat it as a normal job pack.
+	}
+	//so this is a workflow without reservations. Now test each job and create a reservation for it.
+	
+	time_t now = time(NULL), pack_start = _pack_start_compute(map,0), start_res, supposed_time;
+	
+	list_iterator_reset(iter);
+	while ((rec = (pack_job_rec_t *) list_next(iter)) && pack_start <= (now + backfill_window)) {
+		
+		job_ptr = rec->job_ptr;
+		if(job_ptr->resv_name) //reservation already created in the last run of backfill. Nothing to do.
+		    continue;
+		job_ptr->part_ptr = rec->part_ptr;
+				
+		start_res = supposed_time = pack_start;
+		if(job_ptr->details->delay != NO_VAL)
+            start_res = supposed_time = pack_start + job_ptr->details->delay * 60;
+
+		/*
+		 * Identify the nodes which this job can use
+		 */
+		rc = job_test_resv(job_ptr, &start_res, true, &avail_bitmap,
+				   &exc_core_bitmap, &resv_overlap, false);
+		FREE_NULL_BITMAP(exc_core_bitmap);
+		FREE_NULL_BITMAP(avail_bitmap);
+		if (rc != SLURM_SUCCESS) {
+			error("Pack job %u+%u (%u) failed to start due to reservation",
+			      job_ptr->pack_job_id, job_ptr->pack_job_offset,
+			      job_ptr->job_id);
+			rc = SLURM_ERROR;
+			break;
+		}
+		else if(start_res != supposed_time) //job cannot be started at the required time. Shift all reservations forward
+		{
+		      _delete_reservations(map);
+		      pack_start += start_res - supposed_time;
+		      list_iterator_reset(iter);
+		      rc = SLURM_ERROR;
+		      continue;
+		}
+		
+		//so the job can run on the supposed time. Create a reservation for it.
+		resv_desc_msg_t resv_msg;
+		char *select_plugin = slurm_get_select_type();
+		
+		resv_msg.accounts = xstrdup(job_ptr->account);
+		resv_msg.burst_buffer = xstrdup(job_ptr->burst_buffer);
+		if (!xstrcmp(select_plugin, "select/cons_res")) //core selection works only with cons_res plugin
+		{
+		    resv_msg.core_cnt = xmalloc(sizeof(uint32_t) * 2);
+		    resv_msg.core_cnt[0] = job_ptr->details->cpus_per_task;
+		    resv_msg.core_cnt[1] = 0;
+		}
+		else
+		  resv_msg.core_cnt = NULL;
+		xfree(select_plugin);
+		resv_msg.duration = NO_VAL;
+		resv_msg.end_time = start_res + ((job_ptr->time_limit == INFINITE) ? YEAR_MINUTES : job_ptr->time_limit) * 60  + slurm_get_kill_wait();
+		resv_msg.features = xstrdup(job_ptr->details->features);
+		resv_msg.flags = RESERVE_FLAG_PURGE_COMP; //purge the reservation at the end of the job
+		resv_msg.licenses = xstrdup(job_ptr->licenses);
+		resv_msg.name = NULL;
+		resv_msg.node_cnt = xmalloc(sizeof(uint32_t) * 2);
+		resv_msg.node_cnt[0] = job_ptr->details->min_nodes;
+		resv_msg.node_cnt[1] = 0;
+		resv_msg.node_list = xstrdup(job_ptr->details->req_nodes);
+		resv_msg.partition = xstrdup(job_ptr->partition);
+		resv_msg.start_time = start_res;
+		resv_msg.tres_str = xstrdup(job_ptr->tres_req_str);
+		resv_msg.users = uid_to_string(job_ptr->user_id);
+		
+		rc = create_resv(&resv_msg);
+		
+		xfree(resv_msg.accounts);
+		xfree(resv_msg.burst_buffer);
+		xfree(resv_msg.core_cnt);
+		xfree(resv_msg.features);
+		xfree(resv_msg.licenses);
+		xfree(resv_msg.node_cnt);
+		xfree(resv_msg.node_list);
+		xfree(resv_msg.partition);
+		xfree(resv_msg.tres_str);
+		xfree(resv_msg.users);
+		
+		
+		if (rc != SLURM_SUCCESS)
+		{
+			error("Reservation for the pack job %u+%u (%u) failed",
+			      job_ptr->pack_job_id, job_ptr->pack_job_offset,
+			      job_ptr->job_id);
+			rc = SLURM_ERROR;
+			break;
+		}
+		
+		job_ptr->resv_name = resv_msg.name;
+		resv_msg.name = NULL;
+		
+		rc = validate_job_resv(job_ptr);
+		if(rc != SLURM_SUCCESS)
+		{
+			error("Unable to find reservation created for the pack job %u+%u (%u)",
+			      job_ptr->pack_job_id, job_ptr->pack_job_offset,
+			      job_ptr->job_id);
+			rc = SLURM_ERROR;
+			break;
+		}
+		
+	}
+	
+	if(rc != SLURM_SUCCESS){
+	   _delete_reservations(map);
+	   list_iterator_destroy(iter);
+	   return rc;
+	}
+	
+	//All reservations are in place. Now split the jobs starting at different times and rest of them into sub job packs
+	
+	//First remove current pack job info
+	list_iterator_reset(iter);
+	while((rec = (pack_job_rec_t *) list_next(iter))){
+	  if(rec->job_id == rec->job_ptr->pack_job_id){
+	    list_destroy(rec->job_ptr->pack_job_list);
+	    rec->job_ptr->pack_job_list = NULL;
+	  }
+	  rec->job_ptr->delayed_workflow = false; // none will be delayed workflow anymore. Either individual jobs or job packs.
+	  rec->job_ptr->pack_job_id = 0;
+	  xfree(rec->job_ptr->pack_job_id_set);
+	  rec->job_ptr->pack_job_offset = 0;
+	}
+	
+	//Now create new job packs
+	list_iterator_reset(iter);
+	prev_rec = NULL;
+	hostset_t jobid_hostset = NULL;
+	char tmp_str[32];
+	      
+	while ((rec = (pack_job_rec_t *) list_next(iter))) {
+	  if(!prev_rec){
+	    prev_rec = rec;
+	    new_pack_head = rec->job_ptr;
+	    continue;
+	  }
+	  
+	  if(prev_rec->job_ptr->details->delay == rec->job_ptr->details->delay){ //They should be in the same pack job
+	    if(new_pack_head->pack_job_id == 0){ //make it pack job head
+	      new_pack_head->pack_job_id = new_pack_head->job_id;
+	      new_pack_head->pack_job_list = list_create(NULL);
+	      list_append(new_pack_head->pack_job_list, new_pack_head);
+	      new_pack_head->pack_job_offset = 0;
+	      snprintf(tmp_str, sizeof(tmp_str), "%u", new_pack_head->job_id);
+	      jobid_hostset = hostset_create(tmp_str);
+	    }
+	    
+	    job_ptr = rec->job_ptr;
+	    job_ptr->pack_job_id = new_pack_head->job_id;
+	    job_ptr->pack_job_offset = prev_rec->job_ptr->pack_job_offset + 1;
+	    snprintf(tmp_str, sizeof(tmp_str), "%u", job_ptr->job_id);
+	    hostset_insert(jobid_hostset, tmp_str);
+	    list_append(new_pack_head->pack_job_list, job_ptr);
+	  }
+	  else{//delays not equal. So start of a new individual job or job pack
+	    
+	    //But create the pack_job_id_set string for each in the previous job pack
+	    if(new_pack_head->pack_job_id != 0){
+	      int buf_size = list_count(new_pack_head->pack_job_list) * 16;
+	      char *id_set = xmalloc(buf_size);
+	      id_set[0] = '\0';
+	      hostset_ranged_string(jobid_hostset, buf_size, id_set);
+	      char *tmp_offset = id_set;
+	      if (id_set[0] == '[') {
+            tmp_offset = strchr(id_set, ']');
+            if (tmp_offset)
+                tmp_offset[0] = '\0';
+            tmp_offset = id_set + 1;
+	      }
+	      
+	      ListIterator tmp_iter;
+	      tmp_iter = list_iterator_create(new_pack_head->pack_job_list);
+	      
+	      struct job_record *pack_member_ptr;
+	      
+	      while((pack_member_ptr = (struct job_record *) list_next(tmp_iter))) {
+            pack_member_ptr->pack_job_id_set = xstrdup(tmp_offset);
+	      }
+	      
+	      hostset_destroy(jobid_hostset);
+	      id_set[0] = '\0';
+	      list_iterator_destroy(tmp_iter);
+	      xfree(id_set);
+	    }
+	    
+	    new_pack_head = rec->job_ptr;
+	  }
+	  prev_rec->job_ptr->details->delay = NO_VAL; //Also delays are not needed anymore
+	  prev_rec = rec;
+	}
+	prev_rec->job_ptr->details->delay = NO_VAL; //For the last record
+	
+	list_iterator_destroy(iter);
+	
+	return rc;
+}
+
+//***************** Zia Edit End *******************************
+
 /*
  * Start all components of a pack job now
  */
@@ -3534,6 +3799,14 @@ static int _pack_start_now(pack_job_map_t *map, node_space_map_t *node_space)
 	time_t now = time(NULL), start_res;
 	uint32_t hard_limit;
 
+//***************** Zia Edit Begin *******************************
+	rc = _test_workflow(map, node_space);
+	if(rc == SLURM_SUCCESS || rc == SLURM_ERROR)
+	   return rc;
+
+	//Not a workflow. -2 was returned, so keep doing normal scheduling
+	rc = SLURM_SUCCESS;
+//***************** Zia Edit End *******************************
 	iter = list_iterator_create(map->pack_job_list);
 	while ((rec = (pack_job_rec_t *) list_next(iter))) {
 		bool reset_time = false;
@@ -3643,6 +3916,11 @@ static void _pack_kill_now(pack_job_map_t *map)
 	iter = list_iterator_create(map->pack_job_list);
 	while ((rec = (pack_job_rec_t *) list_next(iter))) {
 		job_ptr = rec->job_ptr;
+//***************** Zia Edit Begin *******************************
+		if(job_ptr->delayed_workflow){
+		  break; //it is a workflow that could not get reservations. Nothing to do.
+		}
+//***************** Zia Edit End *******************************
 		if (IS_JOB_PENDING(job_ptr))
 			continue;
 		info("Deallocate %pJ due to pack job start failure",

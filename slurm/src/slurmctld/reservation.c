@@ -2668,6 +2668,9 @@ extern int update_resv(resv_desc_msg_t *resv_desc_ptr)
 			goto update_failure;
 		}
 		resv_ptr->end_time = resv_desc_ptr->end_time;
+ //***************** Zia Edit Begin *******************************       
+		if(resv_ptr->duration != NO_VAL)
+ //***************** Zia Edit End *******************************
 		resv_ptr->duration = 0;
 	}
 

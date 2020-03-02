@@ -1420,6 +1420,10 @@ typedef struct job_descriptor {	/* For submit, allocate, and update requests */
 	char *cpus_per_tres;	/* semicolon delimited list of TRES=# values */
 	time_t deadline;	/* deadline */
 	uint32_t delay_boot;	/* delay boot for desired node state */
+//***************** Zia Edit Begin *******************************
+	uint32_t delay;	    /* additional delay variable added for deep-est */
+	bool	 delayed_workflow;
+//***************** Zia Edit End *******************************
 	char *dependency;	/* synchronize job execution with other jobs */
 	time_t end_time;	/* time by which job must complete, used for
 				 * job update only now, possible deadline
@@ -1708,6 +1712,9 @@ typedef struct job_info {
 	uint32_t wait4switch;   /* Maximum time to wait for minimum switches */
 	char *wckey;            /* wckey for job */
 	char *work_dir;		/* pathname of working directory */
+//***************** Zia Edit Begin *******************************
+	char *workflow_id_set;	    /* set of ids in a delayed workflow for deep-est */
+//***************** Zia Edit End *******************************
 } slurm_job_info_t;
 
 typedef struct priority_factors_object {

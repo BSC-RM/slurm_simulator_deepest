@@ -1272,6 +1272,9 @@ static void _dump_job_state(struct job_record *dump_job_ptr, Buf buffer)
 	pack32(dump_job_ptr->assoc_id, buffer);
 	packstr(dump_job_ptr->batch_features, buffer);
 	pack32(dump_job_ptr->delay_boot, buffer);
+//***************** Zia Edit Begin *******************************
+	pack8(dump_job_ptr->delayed_workflow, buffer);
+//***************** Zia Edit End *******************************
 	pack32(dump_job_ptr->job_id, buffer);
 	pack32(dump_job_ptr->user_id, buffer);
 	pack32(dump_job_ptr->group_id, buffer);
@@ -1292,6 +1295,9 @@ static void _dump_job_state(struct job_record *dump_job_ptr, Buf buffer)
 	pack32(dump_job_ptr->next_step_id, buffer);
 	pack32(dump_job_ptr->pack_job_id, buffer);
 	packstr(dump_job_ptr->pack_job_id_set, buffer);
+//***************** Zia Edit Begin *******************************
+	packstr(dump_job_ptr->workflow_id_set, buffer);
+//***************** Zia Edit End *******************************
 	pack32(dump_job_ptr->pack_job_offset, buffer);
 	pack32(dump_job_ptr->qos_id, buffer);
 	pack32(dump_job_ptr->req_switch, buffer);
@@ -1454,6 +1460,9 @@ static int _load_job_state(Buf buffer, uint16_t protocol_version)
 	char *burst_buffer = NULL, *burst_buffer_state = NULL;
 	char *admin_comment = NULL, *task_id_str = NULL, *mcs_label = NULL;
 	char *clusters = NULL, *pack_job_id_set = NULL, *user_name = NULL;
+//***************** Zia Edit Begin *******************************
+	char *workflow_id_set=NULL;
+//***************** Zia Edit End *******************************
 	char *batch_features = NULL, *system_comment = NULL;
 	uint32_t task_id_size = NO_VAL;
 	char **spank_job_env = (char **) NULL;
@@ -1473,6 +1482,9 @@ static int _load_job_state(Buf buffer, uint16_t protocol_version)
 	uint32_t pelog_env_size = 0;
 	char **pelog_env = (char **) NULL;
 	job_fed_details_t *job_fed_details = NULL;
+//***************** Zia Edit Begin *******************************
+	uint8_t delayed_workflow = 0;
+//***************** Zia Edit End *******************************
 	assoc_mgr_lock_t locks = { .assoc = READ_LOCK,
 				   .qos = READ_LOCK,
 				   .tres = READ_LOCK,
@@ -1503,6 +1515,9 @@ static int _load_job_state(Buf buffer, uint16_t protocol_version)
 		safe_unpack32(&assoc_id, buffer);
 		safe_unpackstr_xmalloc(&batch_features, &name_len, buffer);
 		safe_unpack32(&delay_boot, buffer);
+//***************** Zia Edit Begin *******************************
+		safe_unpack8(&delayed_workflow, buffer);
+//***************** Zia Edit End *******************************
 		safe_unpack32(&job_id, buffer);
 
 		/* validity test as possible */
@@ -1540,6 +1555,9 @@ static int _load_job_state(Buf buffer, uint16_t protocol_version)
 		safe_unpack32(&next_step_id, buffer);
 		safe_unpack32(&pack_job_id, buffer);
 		safe_unpackstr_xmalloc(&pack_job_id_set, &name_len, buffer);
+//***************** Zia Edit Begin *******************************
+        safe_unpackstr_xmalloc(&workflow_id_set, &name_len, buffer);
+//***************** Zia Edit End *******************************
 		safe_unpack32(&pack_job_offset, buffer);
 		safe_unpack32(&qos_id, buffer);
 		safe_unpack32(&req_switch, buffer);
@@ -1734,6 +1752,9 @@ static int _load_job_state(Buf buffer, uint16_t protocol_version)
 		safe_unpack32(&assoc_id, buffer);
 		safe_unpackstr_xmalloc(&batch_features, &name_len, buffer);
 		safe_unpack32(&delay_boot, buffer);
+//***************** Zia Edit Begin *******************************
+		safe_unpack8(&delayed_workflow, buffer);
+//***************** Zia Edit End *******************************
 		safe_unpack32(&job_id, buffer);
 
 		/* validity test as possible */
@@ -1771,6 +1792,9 @@ static int _load_job_state(Buf buffer, uint16_t protocol_version)
 		safe_unpack32(&next_step_id, buffer);
 		safe_unpack32(&pack_job_id, buffer);
 		safe_unpackstr_xmalloc(&pack_job_id_set, &name_len, buffer);
+//***************** Zia Edit Begin *******************************
+        safe_unpackstr_xmalloc(&workflow_id_set, &name_len, buffer);
+//***************** Zia Edit End *******************************
 		safe_unpack32(&pack_job_offset, buffer);
 		safe_unpack32(&qos_id, buffer);
 		safe_unpack32(&req_switch, buffer);
@@ -1962,6 +1986,9 @@ static int _load_job_state(Buf buffer, uint16_t protocol_version)
 
 		safe_unpack32(&assoc_id, buffer);
 		safe_unpack32(&delay_boot, buffer);
+//***************** Zia Edit Begin *******************************
+		safe_unpack8(&delayed_workflow, buffer);
+//***************** Zia Edit End *******************************
 		safe_unpack32(&job_id, buffer);
 
 		/* validity test as possible */
@@ -1999,6 +2026,9 @@ static int _load_job_state(Buf buffer, uint16_t protocol_version)
 		safe_unpack32(&next_step_id, buffer);
 		safe_unpack32(&pack_job_id, buffer);
 		safe_unpackstr_xmalloc(&pack_job_id_set, &name_len, buffer);
+//***************** Zia Edit Begin *******************************
+        safe_unpackstr_xmalloc(&workflow_id_set, &name_len, buffer);
+//***************** Zia Edit End *******************************
 		safe_unpack32(&pack_job_offset, buffer);
 		safe_unpack32(&qos_id, buffer);
 		safe_unpack32(&req_switch, buffer);
@@ -2190,6 +2220,9 @@ static int _load_job_state(Buf buffer, uint16_t protocol_version)
 	if (job_id_sequence <= local_job_id)
 		job_id_sequence = local_job_id + 1;
 #endif
+//***************** Zia Edit Begin *******************************
+	job_ptr->delayed_workflow = delayed_workflow;
+//***************** Zia Edit End *******************************
 
 	xfree(job_ptr->tres_alloc_str);
 	job_ptr->tres_alloc_str = tres_alloc_str;
@@ -2299,6 +2332,11 @@ static int _load_job_state(Buf buffer, uint16_t protocol_version)
 	xfree(job_ptr->pack_job_id_set);
 	job_ptr->pack_job_id_set = pack_job_id_set;
 	pack_job_id_set       = NULL;	/* reused, nothing left to free */
+//***************** Zia Edit Begin *******************************
+    xfree(job_ptr->workflow_id_set);
+    job_ptr->workflow_id_set = workflow_id_set;
+    workflow_id_set        = NULL; /*  reused, nothing left to free */
+//***************** Zia Edit End *******************************
 	job_ptr->pack_job_offset = pack_job_offset;
 	xfree(job_ptr->partition);
 	job_ptr->partition    = partition;
@@ -2515,6 +2553,9 @@ unpack_error:
 	xfree(nodes);
 	xfree(nodes_completing);
 	xfree(pack_job_id_set);
+//***************** Zia Edit Begin *******************************
+    xfree(workflow_id_set);
+//***************** Zia Edit End *******************************
 	xfree(partition);
 	FREE_NULL_LIST(part_ptr_list);
 	xfree(resv_name);
@@ -2600,6 +2641,9 @@ void _dump_job_details(struct job_details *detail_ptr, Buf buffer)
 	pack32(detail_ptr->cpu_freq_max, buffer);
 	pack32(detail_ptr->cpu_freq_gov, buffer);
 	pack_time(detail_ptr->begin_time, buffer);
+//***************** Zia Edit Begin *******************************
+	pack32(detail_ptr->delay, buffer);
+//***************** Zia Edit End *******************************	
 	pack_time(detail_ptr->accrue_time, buffer);
 	pack_time(detail_ptr->submit_time, buffer);
 
@@ -2647,6 +2691,9 @@ static int _load_job_details(struct job_record *job_ptr, Buf buffer,
 	uint8_t open_mode, overcommit, prolog_running;
 	uint8_t share_res, whole_node;
 	time_t begin_time, accrue_time = 0, submit_time;
+//***************** Zia Edit Begin *******************************
+	uint32_t delay;
+//***************** Zia Edit End *******************************
 	int i;
 	multi_core_data_t *mc_ptr;
 
@@ -2687,6 +2734,9 @@ static int _load_job_details(struct job_record *job_ptr, Buf buffer,
 		safe_unpack32(&cpu_freq_max, buffer);
 		safe_unpack32(&cpu_freq_gov, buffer);
 		safe_unpack_time(&begin_time, buffer);
+//***************** Zia Edit Begin *******************************
+		safe_unpack32(&delay, buffer);
+//***************** Zia Edit End *******************************		
 		safe_unpack_time(&accrue_time, buffer);
 		safe_unpack_time(&submit_time, buffer);
 
@@ -2744,6 +2794,9 @@ static int _load_job_details(struct job_record *job_ptr, Buf buffer,
 		safe_unpack32(&cpu_freq_max, buffer);
 		safe_unpack32(&cpu_freq_gov, buffer);
 		safe_unpack_time(&begin_time, buffer);
+//***************** Zia Edit Begin *******************************
+		safe_unpack32(&delay, buffer);
+//***************** Zia Edit End *******************************		
 		safe_unpack_time(&submit_time, buffer);
 
 		safe_unpackstr_xmalloc(&req_nodes,  &name_len, buffer);
@@ -2816,6 +2869,9 @@ static int _load_job_details(struct job_record *job_ptr, Buf buffer,
 	job_ptr->details->argv = argv;
 	job_ptr->details->accrue_time = accrue_time;
 	job_ptr->details->begin_time = begin_time;
+//***************** Zia Edit Begin *******************************
+	job_ptr->details->delay = delay;
+//***************** Zia Edit End *******************************
 	job_ptr->details->contiguous = contiguous;
 	job_ptr->details->core_spec = core_spec;
 	job_ptr->details->cpu_bind = cpu_bind;
@@ -8101,6 +8157,9 @@ _copy_job_desc_to_job_record(job_desc_msg_t * job_desc,
 	job_ptr->job_state  = JOB_PENDING;
 	job_ptr->time_limit = job_desc->time_limit;
 	job_ptr->deadline   = job_desc->deadline;
+//***************** Zia Edit Begin *******************************
+	job_ptr->delayed_workflow = job_desc->delayed_workflow;		
+//***************** Zia Edit End *******************************
 	if (job_desc->delay_boot == NO_VAL)
 		job_ptr->delay_boot   = delay_boot;
 	else
@@ -8279,6 +8338,9 @@ _copy_job_desc_to_job_record(job_desc_msg_t * job_desc,
 	detail_ptr->work_dir = xstrdup(job_desc->work_dir);
 	if (job_desc->begin_time > time(NULL))
 		detail_ptr->begin_time = job_desc->begin_time;
+//***************** Zia Edit Begin *******************************
+    detail_ptr->delay = job_desc->delay;
+//***************** Zia Edit End *******************************
 	job_ptr->select_jobinfo =
 		select_g_select_jobinfo_copy(job_desc->select_jobinfo);
 
@@ -9430,6 +9492,9 @@ static void _list_delete_job(void *job_entry)
 			job_ptr->pack_details = NULL;
 	}
 	xfree(job_ptr->pack_job_id_set);
+//***************** Zia Edit Begin *******************************
+    xfree(job_ptr->workflow_id_set);
+//***************** Zia Edit End *******************************
 	FREE_NULL_LIST(job_ptr->pack_job_list);
 	xfree(job_ptr->partition);
 	FREE_NULL_LIST(job_ptr->part_ptr_list);
@@ -9962,6 +10027,9 @@ void pack_job(struct job_record *dump_job_ptr, uint16_t show_flags, Buf buffer,
 		pack32(dump_job_ptr->group_id, buffer);
 		pack32(dump_job_ptr->pack_job_id, buffer);
 		packstr(dump_job_ptr->pack_job_id_set, buffer);
+//***************** Zia Edit Begin *******************************
+        packstr(dump_job_ptr->workflow_id_set, buffer);
+//***************** Zia Edit End *******************************
 		pack32(dump_job_ptr->pack_job_offset, buffer);
 		pack32(dump_job_ptr->profile,  buffer);
 
@@ -10182,6 +10250,9 @@ void pack_job(struct job_record *dump_job_ptr, uint16_t show_flags, Buf buffer,
 		pack32(dump_job_ptr->group_id, buffer);
 		pack32(dump_job_ptr->pack_job_id, buffer);
 		packstr(dump_job_ptr->pack_job_id_set, buffer);
+//***************** Zia Edit Begin *******************************
+        packstr(dump_job_ptr->workflow_id_set, buffer);
+//***************** Zia Edit End *******************************
 		pack32(dump_job_ptr->pack_job_offset, buffer);
 		pack32(dump_job_ptr->profile,  buffer);
 
@@ -10391,6 +10462,9 @@ void pack_job(struct job_record *dump_job_ptr, uint16_t show_flags, Buf buffer,
 		pack32(dump_job_ptr->group_id, buffer);
 		pack32(dump_job_ptr->pack_job_id, buffer);
 		packstr(dump_job_ptr->pack_job_id_set, buffer);
+//***************** Zia Edit Begin *******************************
+        packstr(dump_job_ptr->workflow_id_set, buffer);
+//***************** Zia Edit End *******************************
 		pack32(dump_job_ptr->pack_job_offset, buffer);
 		pack32(dump_job_ptr->profile,  buffer);
 
@@ -15688,13 +15762,17 @@ extern int job_node_ready(uint32_t job_id, int *ready)
 		return ESLURM_INVALID_PARTITION_NAME;
 	if (rc == READY_JOB_ERROR)
 		return EAGAIN;
-	if (rc)
+//***************** Zia Edit Begin *******************************
+	if (rc || (!rc && job_ptr->delayed_workflow)) // special case for delayed workflow. th nodes will be allocated later.
+//***************** Zia Edit End *******************************
 		rc = READY_NODE_STATE;
 
 	if (job_ptr->details && job_ptr->details->prolog_running)
 		rc &= (~READY_NODE_STATE);
 
-	if (IS_JOB_RUNNING(job_ptr) || IS_JOB_SUSPENDED(job_ptr))
+//***************** Zia Edit Begin *******************************
+	if (IS_JOB_RUNNING(job_ptr) || IS_JOB_SUSPENDED(job_ptr) || (job_ptr->delayed_workflow && IS_JOB_PENDING(job_ptr)))
+//***************** Zia Edit End *******************************
 		rc |= READY_JOB_STATE;
 	if ((rc == (READY_NODE_STATE | READY_JOB_STATE)) &&
 	    job_ptr->alias_list && !xstrcmp(job_ptr->alias_list, "TBD") &&
@@ -17641,6 +17719,10 @@ extern job_desc_msg_t *copy_job_record_to_job_desc(struct job_record *job_ptr)
 	for (i = 0; i < job_desc->argc; i ++)
 		job_desc->argv[i]   = xstrdup(details->argv[i]);
 	job_desc->begin_time        = details->begin_time;
+//***************** Zia Edit Begin *******************************
+	job_desc->delay		    = details->delay;
+	job_desc->delayed_workflow  = job_ptr->delayed_workflow;
+//***************** Zia Edit End *******************************
 	job_desc->bitflags 	    = job_ptr->bit_flags;
 	job_desc->ckpt_interval     = job_ptr->ckpt_interval;
 	job_desc->ckpt_dir          = xstrdup(details->ckpt_dir);

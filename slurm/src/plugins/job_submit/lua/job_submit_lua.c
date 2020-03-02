@@ -377,6 +377,10 @@ static int _job_rec_field(const struct job_record *job_ptr,
 		lua_pushnumber (L, job_ptr->pack_job_id);
 	} else if (!xstrcmp(name, "pack_job_id_set")) {
 		lua_pushstring (L, job_ptr->pack_job_id_set);
+//***************** Zia Edit Begin *******************************
+	} else if (!xstrcmp(name, "workflow_id_set")) {
+		lua_pushstring (L, job_ptr->workflow_id_set);
+//***************** Zia Edit End *******************************
 	} else if (!xstrcmp(name, "pack_job_offset")) {
 		lua_pushnumber (L, job_ptr->pack_job_offset);
 	} else if (!xstrcmp(name, "partition")) {

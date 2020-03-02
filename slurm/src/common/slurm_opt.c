@@ -3109,6 +3109,28 @@ static slurm_cli_opt_t slurm_opt_threads_per_core = {
 	.reset_each_pass = true,
 };
 
+//***************** Zia Edit Begin *******************************
+static int arg_set_delay(slurm_opt_t *opt, const char *arg)
+{
+    int delay = time_str2mins(arg);
+    if ((delay < 0) && (delay != INFINITE)) {
+        error("Invalid --delay specification");
+        exit(-1);
+    }
+	opt->delay = delay;
+	return SLURM_SUCCESS;
+}
+COMMON_TIME_DURATION_OPTION_GET_AND_RESET(delay);
+static slurm_cli_opt_t slurm_opt_delay = {
+	.name = "delay",
+	.has_arg = required_argument,
+	.val = LONG_OPT_DELAY,
+	.set_func = arg_set_delay,
+	.get_func = arg_get_delay,
+	.reset_func = arg_reset_delay,
+};
+//***************** Zia Edit End *******************************	
+
 static int arg_set_time_limit(slurm_opt_t *opt, const char *arg)
 {
 	int time_limit;
@@ -3547,6 +3569,9 @@ static slurm_cli_opt_t *common_options[] = {
 	&slurm_opt_cpus_per_task,
 	&slurm_opt_deadline,
 	&slurm_opt_debugger_test,
+//***************** Zia Edit Begin *******************************
+    &slurm_opt_delay,
+//***************** Zia Edit End *******************************	
 	&slurm_opt_delay_boot,
 	&slurm_opt_dependency,
 	&slurm_opt_disable_status,

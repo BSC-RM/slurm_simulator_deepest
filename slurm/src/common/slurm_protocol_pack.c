@@ -5813,6 +5813,10 @@ _unpack_job_info_members(job_info_t * job, Buf buffer,
 		safe_unpack32(&job->pack_job_id, buffer);
 		safe_unpackstr_xmalloc(&job->pack_job_id_set, &uint32_tmp,
 				       buffer);
+        //***************** Zia Edit Begin *******************************
+        safe_unpackstr_xmalloc(&job->workflow_id_set, &uint32_tmp,
+                        buffer);
+        //***************** Zia Edit End *******************************
 		safe_unpack32(&job->pack_job_offset, buffer);
 		safe_unpack32(&job->profile,  buffer);
 
@@ -5993,6 +5997,10 @@ _unpack_job_info_members(job_info_t * job, Buf buffer,
 		safe_unpack32(&job->pack_job_id, buffer);
 		safe_unpackstr_xmalloc(&job->pack_job_id_set, &uint32_tmp,
 				       buffer);
+		//***************** Zia Edit Begin *******************************
+        safe_unpackstr_xmalloc(&job->workflow_id_set, &uint32_tmp,
+                        buffer);
+        //***************** Zia Edit End *******************************
 		safe_unpack32(&job->pack_job_offset, buffer);
 		safe_unpack32(&job->profile,  buffer);
 
@@ -6173,6 +6181,10 @@ _unpack_job_info_members(job_info_t * job, Buf buffer,
 		safe_unpack32(&job->pack_job_id, buffer);
 		safe_unpackstr_xmalloc(&job->pack_job_id_set, &uint32_tmp,
 				       buffer);
+		//***************** Zia Edit Begin *******************************
+        safe_unpackstr_xmalloc(&job->workflow_id_set, &uint32_tmp,
+                        buffer);
+        //***************** Zia Edit End *******************************
 		safe_unpack32(&job->pack_job_offset, buffer);
 		safe_unpack32(&job->profile,  buffer);
 
@@ -8659,6 +8671,9 @@ _pack_job_desc_msg(job_desc_msg_t * job_desc_ptr, Buf buffer,
 		pack_time(job_desc_ptr->begin_time, buffer);
 		pack_time(job_desc_ptr->end_time, buffer);
 		pack_time(job_desc_ptr->deadline, buffer);
+//***************** Zia Edit Begin *******************************
+		pack32(job_desc_ptr->delay, buffer);
+//***************** Zia Edit End *******************************
 
 		packstr(job_desc_ptr->licenses, buffer);
 		pack16(job_desc_ptr->mail_type, buffer);
@@ -8801,6 +8816,9 @@ _pack_job_desc_msg(job_desc_msg_t * job_desc_ptr, Buf buffer,
 		pack_time(job_desc_ptr->begin_time, buffer);
 		pack_time(job_desc_ptr->end_time, buffer);
 		pack_time(job_desc_ptr->deadline, buffer);
+//***************** Zia Edit Begin *******************************
+		pack32(job_desc_ptr->delay, buffer);
+//***************** Zia Edit End *******************************
 
 		packstr(job_desc_ptr->licenses, buffer);
 		pack16(job_desc_ptr->mail_type, buffer);
@@ -8941,6 +8959,9 @@ _pack_job_desc_msg(job_desc_msg_t * job_desc_ptr, Buf buffer,
 		pack_time(job_desc_ptr->begin_time, buffer);
 		pack_time(job_desc_ptr->end_time, buffer);
 		pack_time(job_desc_ptr->deadline, buffer);
+//***************** Zia Edit Begin *******************************
+		pack32(job_desc_ptr->delay, buffer);
+//***************** Zia Edit End *******************************
 
 		packstr(job_desc_ptr->licenses, buffer);
 		pack16(job_desc_ptr->mail_type, buffer);
@@ -9133,6 +9154,9 @@ _unpack_job_desc_msg(job_desc_msg_t ** job_desc_buffer_ptr, Buf buffer,
 		safe_unpack_time(&job_desc_ptr->begin_time, buffer);
 		safe_unpack_time(&job_desc_ptr->end_time, buffer);
 		safe_unpack_time(&job_desc_ptr->deadline, buffer);
+//***************** Zia Edit Begin *******************************
+		safe_unpack32(&job_desc_ptr->delay, buffer);
+//***************** Zia Edit End *******************************
 
 		safe_unpackstr_xmalloc(&job_desc_ptr->licenses,
 				       &uint32_tmp, buffer);
@@ -9322,6 +9346,9 @@ _unpack_job_desc_msg(job_desc_msg_t ** job_desc_buffer_ptr, Buf buffer,
 		safe_unpack_time(&job_desc_ptr->begin_time, buffer);
 		safe_unpack_time(&job_desc_ptr->end_time, buffer);
 		safe_unpack_time(&job_desc_ptr->deadline, buffer);
+//***************** Zia Edit Begin *******************************
+		safe_unpack32(&job_desc_ptr->delay, buffer);
+//***************** Zia Edit End *******************************
 
 		safe_unpackstr_xmalloc(&job_desc_ptr->licenses,
 				       &uint32_tmp, buffer);
@@ -9507,6 +9534,9 @@ _unpack_job_desc_msg(job_desc_msg_t ** job_desc_buffer_ptr, Buf buffer,
 		safe_unpack_time(&job_desc_ptr->begin_time, buffer);
 		safe_unpack_time(&job_desc_ptr->end_time, buffer);
 		safe_unpack_time(&job_desc_ptr->deadline, buffer);
+//***************** Zia Edit Begin *******************************
+		safe_unpack32(&job_desc_ptr->delay, buffer);
+//***************** Zia Edit End *******************************
 
 		safe_unpackstr_xmalloc(&job_desc_ptr->licenses,
 				       &uint32_tmp, buffer);

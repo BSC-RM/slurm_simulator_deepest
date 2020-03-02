@@ -2316,8 +2316,10 @@ static struct job_record *_pack_job_ready(struct job_record *job_ptr)
 	struct job_record *pack_leader, *pack_job;
 	ListIterator iter;
 
-	if (job_ptr->pack_job_id == 0)	/* Not a pack job */
+//***************** Zia Edit Begin *******************************
+	if (job_ptr->pack_job_id == 0 || job_ptr->delayed_workflow)	/* Not a pack job or is a job in a workflow*/
 		return job_ptr;
+//***************** Zia Edit End *******************************
 
 	pack_leader = find_job_record(job_ptr->pack_job_id);
 	if (!pack_leader) {

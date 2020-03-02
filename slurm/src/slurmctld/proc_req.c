@@ -1409,6 +1409,9 @@ static void _slurm_rpc_allocate_pack(slurm_msg_t * msg)
 	lock_slurmctld(job_write_lock);
 	inx = 0;
 	iter = list_iterator_create(job_req_list);
+	//***************** Zia Edit Begin *******************************
+		bool is_delay = false;
+	//***************** Zia Edit End *******************************
 	while ((job_desc_msg = (job_desc_msg_t *) list_next(iter))) {
 		if (job_uid == NO_VAL)
 			job_uid = job_desc_msg->user_id;
@@ -1490,6 +1493,10 @@ static void _slurm_rpc_allocate_pack(slurm_msg_t * msg)
 		if (pack_job_id == 0) {
 			pack_job_id = job_ptr->job_id;
 			first_job_ptr = job_ptr;
+//***************** Zia Edit Begin *******************************
+			if(job_ptr->details)
+			    job_ptr->details->delay = NO_VAL; //Pack leader cannot be delayed as the workflow starts with this job
+//***************** Zia Edit End *******************************
 		}
 		snprintf(tmp_str, sizeof(tmp_str), "%u", job_ptr->job_id);
 		if (jobid_hostset)
@@ -1499,6 +1506,10 @@ static void _slurm_rpc_allocate_pack(slurm_msg_t * msg)
 		job_ptr->pack_job_id     = pack_job_id;
 		job_ptr->pack_job_offset = pack_job_offset++;
 		list_append(submit_job_list, job_ptr);
+		//***************** Zia Edit Begin *******************************
+		if(!is_delay && job_desc_msg->delay != NO_VAL)
+		    is_delay = true;
+		//***************** Zia Edit End *******************************
 	}
 	list_iterator_destroy(iter);
 	xfree(hostname);
@@ -1526,6 +1537,10 @@ static void _slurm_rpc_allocate_pack(slurm_msg_t * msg)
 	iter = list_iterator_create(submit_job_list);
 	while ((job_ptr = (struct job_record *) list_next(iter))) {
 		job_ptr->pack_job_id_set = xstrdup(pack_job_id_set);
+//***************** Zia Edit Begin *******************************
+        if(job_ptr->delayed_workflow)
+            job_ptr->workflow_id_set = xstrdup(pack_job_id_set);
+//***************** Zia Edit End *******************************
 	}
 	list_iterator_destroy(iter);
 	xfree(pack_job_id_set);
@@ -1540,6 +1555,9 @@ static void _slurm_rpc_allocate_pack(slurm_msg_t * msg)
 		inx = 0;
 		iter = list_iterator_create(submit_job_list);
 		while ((job_ptr = (struct job_record *) list_next(iter))) {
+//***************** Zia Edit Begin *******************************
+			job_ptr->delayed_workflow = is_delay;
+//***************** Zia Edit End *******************************
 			if (!resp)
 				resp = list_create(_del_alloc_pack_msg);
 			list_append(resp,
@@ -4171,6 +4189,9 @@ static void _slurm_rpc_submit_batch_pack_job(slurm_msg_t *msg)
 	/* Validate the individual request */
 	lock_slurmctld(job_read_lock);     /* Locks for job_submit plugin use */
 	iter = list_iterator_create(job_req_list);
+//***************** Zia Edit Begin *******************************	
+	bool is_delay = false;
+//***************** Zia Edit End *******************************
 	while ((job_desc_msg = (job_desc_msg_t *) list_next(iter))) {
 		if (job_uid == NO_VAL)
 			job_uid = job_desc_msg->user_id;
@@ -4218,6 +4239,10 @@ static void _slurm_rpc_submit_batch_pack_job(slurm_msg_t *msg)
 			reject_job = true;
 			break;
 		}
+//***************** Zia Edit Begin *******************************	
+		if(!is_delay && job_desc_msg->delay != NO_VAL)
+		    is_delay = true;
+//***************** Zia Edit End *******************************		
 
 		pack_job_offset++;
 	}
@@ -4247,6 +4272,10 @@ static void _slurm_rpc_submit_batch_pack_job(slurm_msg_t *msg)
 	lock_slurmctld(job_write_lock);
 	START_TIMER;	/* Restart after we have locks */
 	iter = list_iterator_create(job_req_list);
+//***************** Zia Edit Begin *******************************	
+	uint32_t prev_delay = NO_VAL;
+	bool is_delay_change = false;
+//***************** Zia Edit End *******************************
 	while ((job_desc_msg = (job_desc_msg_t *) list_next(iter))) {
 		if (!script)
 			script = xstrdup(job_desc_msg->script);
@@ -4256,7 +4285,12 @@ static void _slurm_rpc_submit_batch_pack_job(slurm_msg_t *msg)
 			xfree(job_desc_msg->script);
 
 		}
-		if (pack_job_offset) {
+//***************** Zia Edit Begin *******************************	
+		is_delay_change = (prev_delay != job_desc_msg->delay) ? true : false;
+		prev_delay = job_desc_msg->delay;
+		
+		if (pack_job_offset || !is_delay_change) {
+//***************** Zia Edit End *******************************
 			/* Email notifications disable except for pack leader */
 			job_desc_msg->mail_type = 0;
 			xfree(job_desc_msg->mail_user);
@@ -4264,7 +4298,9 @@ static void _slurm_rpc_submit_batch_pack_job(slurm_msg_t *msg)
 		if (!job_desc_msg->burst_buffer) {
 			xfree(job_desc_msg->script);
 			if (!(job_desc_msg->script = bb_g_build_pack_script(
-				      script, pack_job_offset))) {
+//***************** Zia Edit Begin *******************************	
+				      script, pack_job_offset, is_delay_change))) {
+//***************** Zia Edit End *******************************
 				error_code =
 					ESLURM_INVALID_BURST_BUFFER_REQUEST;
 				reject_job = true;
@@ -4283,6 +4319,10 @@ static void _slurm_rpc_submit_batch_pack_job(slurm_msg_t *msg)
 			if (pack_job_id == 0) {
 				pack_job_id = job_ptr->job_id;
 				first_job_ptr = job_ptr;
+//***************** Zia Edit Begin *******************************
+				if(job_ptr->details)
+				    job_ptr->details->delay = NO_VAL; //Pack leader cannot be delayed as the workflow starts with this job
+//***************** Zia Edit End *******************************
 				alloc_only = 1;
 			}
 			snprintf(tmp_str, sizeof(tmp_str), "%u",
@@ -4294,6 +4334,9 @@ static void _slurm_rpc_submit_batch_pack_job(slurm_msg_t *msg)
 			job_ptr->pack_job_id     = pack_job_id;
 			job_ptr->pack_job_offset = pack_job_offset++;
 			job_ptr->batch_flag      = 1;
+//***************** Zia Edit Begin *******************************	
+			job_ptr->delayed_workflow = is_delay;
+//***************** Zia Edit End *******************************		
 			list_append(submit_job_list, job_ptr);
 		}
 
@@ -4332,6 +4375,10 @@ static void _slurm_rpc_submit_batch_pack_job(slurm_msg_t *msg)
 	iter = list_iterator_create(submit_job_list);
 	while ((job_ptr = (struct job_record *) list_next(iter))) {
 		job_ptr->pack_job_id_set = xstrdup(pack_job_id_set);
+//***************** Zia Edit Begin *******************************
+        if(job_ptr->delayed_workflow)
+            job_ptr->workflow_id_set = xstrdup(pack_job_id_set);
+//***************** Zia Edit End *******************************
 		if ((error_code == SLURM_SUCCESS) &&
 		    (slurmctld_conf.debug_flags & DEBUG_FLAG_HETERO_JOBS)) {
 			info("Submit %pJ", job_ptr);
@@ -4893,6 +4940,31 @@ static void _slurm_rpc_resv_create(slurm_msg_t * msg)
 	}
 }
 
+//***************** Zia Edit Begin *******************************
+/* Determine if the request is by the user who submitted a delayed workflow */
+static bool _is_workflow_uid(char *resv_name, uid_t uid)
+{
+	ListIterator job_iterator;
+	struct job_record *job_ptr;
+	bool match = false;
+
+	job_iterator = list_iterator_create(job_list);
+	while ((job_ptr = (struct job_record *) list_next(job_iterator))) {
+		if ((!IS_JOB_FINISHED(job_ptr)) && 
+            //cannot use job_ptr->delayed_workflow becuase it is set to false after reservation creation by backfill scheduler.
+            (job_ptr->workflow_id_set != NULL) &&
+            (strcmp(job_ptr->resv_name, resv_name) == 0) &&
+		    (job_ptr->user_id == uid)) {
+			match = true;
+			break;
+		}
+	}
+	list_iterator_destroy(job_iterator);
+
+	return match;
+}
+//***************** Zia Edit End *******************************
+
 /* _slurm_rpc_resv_update - process RPC to update a reservation */
 static void _slurm_rpc_resv_update(slurm_msg_t * msg)
 {
@@ -4907,7 +4979,9 @@ static void _slurm_rpc_resv_update(slurm_msg_t * msg)
 
 	START_TIMER;
 	debug2("Processing RPC: REQUEST_UPDATE_RESERVATION from uid=%d", uid);
-	if (!validate_operator(uid)) {
+//***************** Zia Edit Begin *******************************
+	if (!(validate_operator(uid) || _is_workflow_uid(resv_desc_ptr->name, uid))) {
+//***************** Zia Edit End *******************************
 		error_code = ESLURM_USER_ID_MISSING;
 		error("Security violation, UPDATE_RESERVATION RPC from uid=%d",
 		      uid);

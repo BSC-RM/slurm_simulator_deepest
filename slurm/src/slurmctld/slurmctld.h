@@ -515,6 +515,9 @@ struct job_details {
 	time_t begin_time;		/* start at this time (srun --begin),
 					 * resets to time first eligible
 					 * (all dependencies satisfied) */
+//***************** Zia Edit Begin *******************************
+	uint32_t delay;			/* --delay			*/
+//***************** Zia Edit End *******************************
 	char *ckpt_dir;			/* directory to store checkpoint
 					 * images */
 	char *cluster_features;		/* required cluster_features */
@@ -705,6 +708,9 @@ struct job_record {
 	uint64_t db_index;              /* used only for database plugins */
 	time_t deadline;		/* deadline */
 	uint32_t delay_boot;		/* Delay boot for desired node mode */
+//***************** Zia Edit Begin *******************************
+	bool delayed_workflow;		/* Is the job pack with delayed jobs using --delay	*/
+//***************** Zia Edit End *******************************
 	uint32_t derived_ec;		/* highest exit code of all job steps */
 	struct job_details *details;	/* job details */
 	uint16_t direct_set_prio;	/* Priority set directly if
@@ -891,6 +897,9 @@ struct job_record {
 	uint32_t wait4switch; /* Maximum time to wait for minimum switches */
 	bool     best_switch; /* true=min number of switches met           */
 	time_t wait4switch_start; /* Time started waiting for switch       */
+//***************** Zia Edit Begin *******************************
+	char *workflow_id_set;	    /* set of ids in a delayed workflow for deep-est */
+//***************** Zia Edit End *******************************
 #ifdef SLURM_SIMULATOR
 	uint32_t duration;
 	uint32_t *best_duration;

@@ -402,6 +402,14 @@ slurm_sprint_job_info ( job_info_t * job_ptr, int one_liner )
 		xstrcat(out, line_end);
 	}
 
+	//***************** Zia Edit Begin *******************************
+	/****** Line ******/
+	if (job_ptr->workflow_id_set) {
+		xstrfmtcat(out, "WorkflowIdSet=%s", job_ptr->workflow_id_set);
+		xstrcat(out, line_end);
+	}
+    //***************** Zia Edit End *******************************
+
 	/****** Line ******/
 	user_name = uid_to_string((uid_t) job_ptr->user_id);
 	group_name = gid_to_string((gid_t) job_ptr->group_id);

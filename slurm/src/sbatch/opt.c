@@ -1114,6 +1114,9 @@ static void _help(void)
 "  -d, --dependency=type:jobid defer job until condition on jobid is satisfied\n"
 "      --deadline=time         remove the job if no ending possible before\n"
 "                              this deadline (start > (deadline - time[-min]))\n"
+//***************** Zia Edit Begin *******************************	
+"      --delay=minutes         number of minutes to delay the execution from the start of the pack leader\n"
+//***************** Zia Edit End *******************************
 "      --delay-boot=mins       delay boot for desired node features\n"
 "  -D, --chdir=directory       set working directory for batch script\n"
 "  -e, --error=err             file for batch script's standard error\n"
