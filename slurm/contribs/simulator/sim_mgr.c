@@ -781,10 +781,10 @@ void generate_job_desc_msg(job_desc_msg_t* dmesg, job_trace_t* jobd) {
 		} else if (strlen(jobd->manifest_filename)>1) {
 			//dmesg->name=xstrdup(jobd->manifest_filename+1);
 		}
-	//	if (jobd->wait_component_job_time && jobd->wait_component_job_time != -1) {
-	//		dmesg->delay = ceil(jobd->wait_component_job_time / 60); //In minutes
-	//		printf("Delayed jobpack compont %d by %d\n", jobd->component_job_id, dmesg->delay);
-	//	}
+		if (jobd->wait_component_job_time && jobd->wait_component_job_time != -1) {
+			dmesg->delay = ceil(jobd->wait_component_job_time / 60); //In minutes
+			printf("Delayed jobpack compont %d by %d\n", jobd->component_job_id, dmesg->delay);
+		}
 }
 
 void
