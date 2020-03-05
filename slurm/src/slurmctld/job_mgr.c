@@ -164,6 +164,9 @@ static bitstr_t *requeue_exit_hold = NULL;
 static int	select_serial = -1;
 static uint32_t job_dep_count = 0;
 static char prev_name[7]="";
+static uint32_t prev_time_limit=0;
+static uint32_t prev_max_nodes=0;
+
 /* Local functions */
 static void _add_job_hash(struct job_record *job_ptr);
 static void _add_job_array_hash(struct job_record *job_ptr);
@@ -4816,24 +4819,38 @@ extern int job_allocate(job_desc_msg_t * job_specs, int immediate,
 	 */
 	if (job_ptr->priority == NO_VAL){
 		set_job_prio(job_ptr);
-                if(job_ptr->details->depend_list){ // TODO It should be checked if there is plussingleton in the list, not to conflict with other dependency types
-                   if(!strcmp(job_ptr->name,prev_name)){
-                     job_dep_count++;
-                     if(job_dep_count == 2) job_ptr->priority = job_ptr->priority - 5; // -X
-                     /*else if (job_dep_count == 3) {
-                         job_ptr->priority = job_ptr->priority - 15; // -Y; X and Y should be made parameters to control how fast do we want alternative modules to be considered.
-                         //job_dep_count=0;
-                     }*/
-                     strcpy(prev_name,job_ptr->name);
-                     info("JOB_MGR: Setting priority to %u for job %u, order number %u ", job_ptr->priority, job_ptr->job_id, job_dep_count);
-                   }
-                   else{
-                       job_dep_count=1;
-                       strcpy(prev_name,job_ptr->name);
-                   }
-                }
+		if(job_ptr->details->depend_list){ // TODO It should be checked if there is plussingleton in the list, not to conflict with other dependency types
+			if(!strcmp(job_ptr->name,prev_name)){
+				job_dep_count++;
+				/*if(job_dep_count == 2){ // Enter here if you want to change the prio of alt job.
+					// X_per_job priority scheme
+                                        double res_time_incr;
+                                        res_time_incr = (job_ptr->time_limit*job_ptr->details->max_nodes)/(prev_time_limit*prev_max_nodes); // X_per_job
+					//info("JOB_MGR: res_time_incr %lf ", res_time_incr);
+					//info("JOB_MGR: SECOND JOB: time_limit %u, max_nodes %u, prev_time_limit %u, prev_max_nodes %u ", job_ptr->time_limit, job_ptr->details->max_nodes, prev_time_limit, prev_max_nodes);
+					if(res_time_incr < 10) // 10 can be converted to a parameter, as well.
+						job_ptr->priority = job_ptr->priority-res_time_incr; // -X
+					else
+						job_ptr->priority = 0;
+					////////////////////////////////////////
+					// X static for all jobs. In this case 5.
+					//job_ptr->priority = job_ptr->priority-5; 
+				}*/
+        			strcpy(prev_name,job_ptr->name);
+				prev_time_limit = job_ptr->time_limit;
+				prev_max_nodes = job_ptr->details->max_nodes;
+				//info("JOB_MGR: Setting priority to %u for job %u, order number %u ", job_ptr->priority, job_ptr->job_id, job_dep_count);
+			}
+			else{
+				job_dep_count=1;
+				strcpy(prev_name,job_ptr->name);
+				prev_time_limit = job_ptr->time_limit;
+				prev_max_nodes = job_ptr->details->min_nodes;
+				//info("JOB_MGR: FIRST JOB: time_limit %u, max_nodes %u, prev_time_limit %u, prev_max_nodes %u ", job_ptr->time_limit, job_ptr->details->min_nodes, prev_time_limit, prev_max_nodes);
+			}
+		}
 
-        }
+	}
 	if (independent &&
 	    (license_job_test(job_ptr, time(NULL), true) != SLURM_SUCCESS))
 		independent = false;
