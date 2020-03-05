@@ -140,6 +140,7 @@ int read_job_trace_record_ascii(FILE * trace_file_ptr, job_trace_t *job_trace, i
 // standard format in ascii (all columns from models)
 	if (trace_format == 2) {
                 //3;3;-1;950;8;-1;-1;-1;-1;-1;1;tester;-1;-1;1;esb;-1;-1;esb,dam,cm
+		//2000;1546227;-1;7800;16;-1;-1;-1;12001;-1;1;single-module;-1;-1;1;dam;-1;-1;-1
 		ret_val = fscanf(trace_file_ptr, "%d;%ld;%d;%d;%d;%ld;%d;%ld;%d;%ld;%d;%29[^;];%29[^;];%ld;%29[^;];%29[^;];%29[^;];%ld;%29[^\n]",
 		&job_trace->job_id, &job_trace->submit, &job_trace->wait_modular_job_time, 
 		&job_trace->duration, &job_trace->tasks, 
@@ -149,8 +150,10 @@ int read_job_trace_record_ascii(FILE * trace_file_ptr, job_trace_t *job_trace, i
 		job_trace->dependency, &dummy, job_trace->module_list);
 
                 if(job_trace->wclimit == -1)
-                    job_trace->wclimit = MAX(1,ceil((float)(job_trace->duration/60))*2);   // We set wclimit as twice the job duration if SWF does not have wclimit info. TODO Add a model.  
+                    job_trace->wclimit = MAX(1,ceil((float)(job_trace->duration/60))*1.2);   // We set wclimit as twice the job duration if SWF does not have wclimit info. TODO Add a model.  
+                else job_trace->wclimit = MAX(1,ceil((float)(job_trace->wclimit/60)+1));
                 job_trace->duration = MAX(1,job_trace->duration);
+                //job_trace->duration = MAX(1,ceil((float)(job_trace->duration/60)));
                 
                 if(job_trace->tasks == 0){
                     printf("sim_trace: Trace contains jobs with job_trace->tasks %u\n", job_trace->tasks );
