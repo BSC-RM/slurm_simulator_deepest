@@ -13,7 +13,7 @@ ReturnToService=1
 
 SlurmctldPort=TOKEN_SLURMCTLD_PORT
 SlurmdPort=TOKEN_SLURMD_PORT
-CryptoType=crypto/openssl
+CredType=cred/none
 JobCredentialPrivateKey=TOKEN_SLURM_USER_PATH/slurm_conf/slurm.key
 JobCredentialPublicCertificate=TOKEN_SLURM_USER_PATH/slurm_conf/slurm.cert
 #CryptoType=crypto/munge
@@ -56,7 +56,7 @@ MpiDefault=none
 #SchedulerType=sched/backfill
 
 #Enable to test msa-backfill
-SchedulerType=sched/msa_backfill
+SchedulerType=sched/backfill
 
 #SchedulerParameters=bf_interval=30,bf_queue_limit=TOKEN_BF_QUEUE_LIMIT,bf_max_job_test=100,default_queue_depth=50
 SchedulerParameters=bf_interval=23,bf_queue_limit=TOKEN_BF_QUEUE_LIMIT #,default_queue_depth=50

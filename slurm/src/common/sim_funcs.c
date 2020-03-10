@@ -2,6 +2,8 @@
 
 #include "src/common/sim_funcs.h"
 #include "src/common/slurm_protocol_defs.h"
+#include "src/common/xmalloc.h"
+#include "src/common/xstring.h"
 #include <err.h>
 /* Structures, macros and other definitions */
 //#define LIBC_PATH  "/lib/x86_64-linux-gnu/libc.so.6"
@@ -220,7 +222,7 @@ char *sim_getname(uid_t uid) {
 		if (aux->sim_uid == uid) {
 			//user_name = malloc(100);
 			//memset(user_name,'\0',100);
-			user_name = strdup(aux->sim_name);
+			user_name = xstrdup(aux->sim_name);
 			return user_name;
 		}
 		aux = aux->next;
@@ -257,6 +259,9 @@ int getpwnam_r(const char *name, struct passwd *pwd,
 	}
 	pwd->pw_name = strdup(name);
 	pwd->pw_gid = sim_getgid(pwd->pw_uid);
+        pwd->pw_gecos = xstrdup("NULL");
+	pwd->pw_dir = xstrdup("/NULL");
+	pwd->pw_shell = xstrdup("/bin/bash");
 	debug("Found uid %u for name %s", pwd->pw_uid, pwd->pw_name);
 
 	*result = pwd;
@@ -276,6 +281,9 @@ int getpwuid_r(uid_t uid, struct passwd *pwd,
 	}
 	pwd->pw_uid = uid;
 	pwd->pw_gid = sim_getgid(uid);
+        pwd->pw_gecos = xstrdup("NULL");
+	pwd->pw_dir = xstrdup("/NULL");
+	pwd->pw_shell = xstrdup("/bin/bash");
 	debug("Found name %s for uid %u", pwd->pw_name, pwd->pw_uid);
 
 	*result = pwd;
@@ -345,13 +353,13 @@ static int getting_simulation_users() {
 		if (pos == 0)
 			break;
 
-		new_sim_user = malloc(sizeof(sim_user_info_t));
+		new_sim_user = xmalloc(sizeof(sim_user_info_t));
 		if (new_sim_user == NULL) {
 			error("Malloc error for new sim user");
 			return -1;
 		}
 		debug("Reading user %s", username);
-		new_sim_user->sim_name = strdup(username);
+		new_sim_user->sim_name = xstrdup(username);
 
 		pos = 0;
 		memset(&uid_string, '\0', 10);
