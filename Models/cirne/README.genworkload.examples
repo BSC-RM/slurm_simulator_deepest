@@ -1,0 +1,2 @@
+## system size 10 nodes, maximum job size 8 nodes, number of jobs 100 
+./genworkload 10 anl 100 cirne.sys10n.maxjob8n.anl.100.1.1 
