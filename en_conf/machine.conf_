@@ -1,0 +1,28 @@
+module 
+{
+	id: CM
+	cores: 8
+	name: "Machine1"
+	description: "Skylake machine, AVX not considered by the model, even if enabled in some apps"
+	freqMin: 2.0
+	freqMax: 2.4
+	freqInc: 0.1
+	models 
+	{
+		type: EAR_ENERGY
+		parameters: 6
+		modelFile: "/home/marcodamico/PhD/sims/conf/juli.energy"
+	}
+	models
+	{
+		type: EAR_POWER
+		parameters: 3
+		modelFile: "/home/marcodamico/PhD/sims/conf/juli.power"
+	}
+	models
+	{
+		type: EAR_TIME
+		parameters: 3
+		modelFile: "/home/marcodamico/PhD/sims/conf/juli.power"
+	}
+}
