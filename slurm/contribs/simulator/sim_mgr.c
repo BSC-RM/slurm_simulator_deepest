@@ -885,6 +885,10 @@ generateJob(job_trace_t* jobd, List *job_req_list, int modular_jobid, int * dura
                     slurm_msg_t_init(&resp_msg);
                     req.job_id       = rptr->job_id;
                     req.duration     = jobd->duration;
+/*  Zia edit begin  */
+                    req.api_call_time = jobd->api_call_time;
+                    req.is_delayed_workflow = false;
+/*  Zia edit end  */
                     req_msg.msg_type = REQUEST_SIM_JOB;
                     req_msg.data     = &req;
                     req_msg.protocol_version = SLURM_PROTOCOL_VERSION;
@@ -930,7 +934,12 @@ generateJob(job_trace_t* jobd, List *job_req_list, int modular_jobid, int * dura
             		 req1.job_id       = rptr1->job_id;
            		 //req2.job_id       = rptr2->job_id;
            		 req1.duration     = (int)((dmesg1.time_limit*jobd->duration)/dmesg.time_limit);
-           		 //req2.duration     = (int)((dmesg2.time_limit*jobd->duration)/dmesg.time_limit);
+
+/*  Zia edit begin  */
+                 req1.api_call_time = jobd->api_call_time;
+                 req1.is_delayed_workflow = false;
+/*  Zia edit end  */
+//req2.duration     = (int)((dmesg2.time_limit*jobd->duration)/dmesg.time_limit);
            		 req_msg1.msg_type = REQUEST_SIM_JOB;
            		 //req_msg2.msg_type = REQUEST_SIM_JOB;
            		 req_msg1.data     = &req1;
@@ -983,7 +992,11 @@ generateJob(job_trace_t* jobd, List *job_req_list, int modular_jobid, int * dura
 			req.job_id       = rptr->job_id + comp;
 			req.duration     = duration[comp+1];
 			req_msg.msg_type = REQUEST_SIM_JOB;
-			req_msg.data     = &req;
+/*  Zia edit begin  */
+            req.api_call_time = jobd->api_call_time;
+            req.is_delayed_workflow = true;
+/*  Zia edit end  */           		 
+            req_msg.data     = &req;
 			req_msg.protocol_version = SLURM_PROTOCOL_VERSION;
 			this_addr = "localhost";
 			slurm_set_addr(&req_msg.address, (uint16_t)slurm_get_slurmd_port(),

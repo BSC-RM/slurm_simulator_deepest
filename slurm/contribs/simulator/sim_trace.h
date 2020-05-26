@@ -77,6 +77,9 @@ typedef struct job_trace {
     char after_complition_job_id[MAX_MWF_STR_LEN];
     char dependency_type[MAX_MWF_STR_LEN];
     int think_rreq_component_time;
+/*  Zia edit begin  */
+    int api_call_time;
+/*  Zia edit end    */
 } job_trace_t;
 
 /* dummy to keep compatibility with old binary format, used when read per bytes either than per columns */
