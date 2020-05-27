@@ -508,7 +508,7 @@ static int _send_slurmd_conf_lite (int fd, slurmd_conf_t *cf)
 
 rwfail:
 	slurm_mutex_unlock(&cf->config_mutex);
-º	return (-1);
+	return (-1);
 }
 
 #ifdef SLURM_SIMULATOR
@@ -580,7 +580,7 @@ int simulator_add_future_event(batch_job_launch_msg_t *req){
 			pthread_mutex_unlock(&simulator_mutex);
 			return -1;
 		}
-        
+
 		new_event->job_id = req->job_id;
 		new_event->uid = req->uid;
 		if (req->is_delayed_workflow)
@@ -590,7 +590,7 @@ int simulator_add_future_event(batch_job_launch_msg_t *req){
 		new_event->when = now + temp_ptr->api_call_time;
 		new_event->nodelist = NULL;
 		new_event->next = NULL;
-        
+
 		total_sim_events++;
 		volatile simulator_event_t *node_temp = head_simulator_event;
 		info("SIM: Adding new WF event for job %d in the event list for future time %ld", new_event->job_id, new_event->when);

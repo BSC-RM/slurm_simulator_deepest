@@ -75,7 +75,7 @@
  */
 #include <semaphore.h>
 
-#WF APIs
+/* WF APIs */
 #include "slurm_workflow.h"
 #endif
 
