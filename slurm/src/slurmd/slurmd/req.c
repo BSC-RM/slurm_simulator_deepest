@@ -508,7 +508,7 @@ static int _send_slurmd_conf_lite (int fd, slurmd_conf_t *cf)
 
 rwfail:
 	slurm_mutex_unlock(&cf->config_mutex);
-	return (-1);
+º	return (-1);
 }
 
 #ifdef SLURM_SIMULATOR
@@ -540,6 +540,7 @@ int simulator_add_future_event(batch_job_launch_msg_t *req){
 		return -1;
 	}
 	new_event->job_id = req->job_id;
+	new_event->uid = req->uid;
 	new_event->type = REQUEST_COMPLETE_BATCH_SCRIPT;
 	new_event->when = now + temp_ptr->duration;
 	new_event->nodelist = strdup(req->nodes);
@@ -551,7 +552,7 @@ int simulator_add_future_event(batch_job_launch_msg_t *req){
 		head_simulator_event = new_event;
 	}else{
 		volatile simulator_event_t *node_temp = head_simulator_event;
-		info("SIM: Adding new event for job %d in the event listi for future time %ld", new_event->job_id, new_event->when);
+		info("SIM: Adding new event for job %d in the event list for future time %ld", new_event->job_id, new_event->when);
 
 		if(head_simulator_event->when > new_event->when){
 			new_event->next = head_simulator_event;
@@ -571,7 +572,47 @@ int simulator_add_future_event(batch_job_launch_msg_t *req){
 		}
 		node_temp->next = new_event;
 	}
+	/* Check if call of WF API is associated with this job and create a new event */
+	if (temp_ptr->api_call_time) {
+		new_event = (simulator_event_t *)malloc(sizeof(simulator_event_t));
+		if(!new_event){
+		error("SIMULATOR: malloc fails for new_event\n");
+			pthread_mutex_unlock(&simulator_mutex);
+			return -1;
+		}
+        
+		new_event->job_id = req->job_id;
+		new_event->uid = req->uid;
+		if (req->is_delayed_workflow)
+		    new_event->type = WF_API;
+		else
+		    new_event->type = AFTEROK_API;
+		new_event->when = now + temp_ptr->api_call_time;
+		new_event->nodelist = NULL;
+		new_event->next = NULL;
+        
+		total_sim_events++;
+		volatile simulator_event_t *node_temp = head_simulator_event;
+		info("SIM: Adding new WF event for job %d in the event list for future time %ld", new_event->job_id, new_event->when);
 
+		if(head_simulator_event->when > new_event->when){
+			new_event->next = head_simulator_event;
+			head_simulator_event = new_event;
+			pthread_mutex_unlock(&simulator_mutex);
+			return 0;
+		}
+
+		while((node_temp->next) && (node_temp->next->when < new_event->when))
+			node_temp = node_temp->next;
+
+		if(node_temp->next){
+			new_event->next = node_temp->next;
+			node_temp->next = new_event;
+			pthread_mutex_unlock(&simulator_mutex);
+			return 0;
+		}
+		node_temp->next = new_event;
+        }
 	pthread_mutex_unlock(&simulator_mutex);
 	return 0;
 }
@@ -3278,6 +3319,8 @@ _rpc_sim_job(slurm_msg_t *msg)
 
 		new->job_id = sim_job->job_id;
 		new->duration = sim_job->duration;
+		new->api_call_time = sim_job->api_call_time;
+		new->wf_type = sim_job->wf_type;
 
 		new->next = head_simulator_event_info;
 		head_simulator_event_info = new;

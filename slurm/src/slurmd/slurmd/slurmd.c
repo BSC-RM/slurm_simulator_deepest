@@ -74,6 +74,9 @@
  * needed by the simulator.  The definitions should match what are in slurm_sim.h.
  */
 #include <semaphore.h>
+
+#WF APIs
+#include "slurm_workflow.h"
 #endif
 
 #include "src/common/assoc_mgr.h"
@@ -712,18 +715,31 @@ _simulator_helper(void *arg)
 			aux->next = head_sim_completed_jobs;
 			head_sim_completed_jobs = aux;
 			total_sim_events--;
-			info("SIM: Sending JOB_COMPLETE_BATCH_SCRIPT for job %d", event_jid);
-			if(_send_complete_batch_script_msg(event_jid, SLURM_SUCCESS, 0) == SLURM_SUCCESS) { 
+			/* Manage WF API behavior */
+			if (head_simulator_event->type == WF_API)
+			    if(slurm_wf_move_all_res(2, event_jid))
+				debug("WF_API: Error moving reservarions");
+			    else if (head_simulator_event->type == AFTEROK_API) {
+				char jid_stri[1024];
+				sprintf(jid_str, "%u", event_jid);
+				if (slurm_change_dep(jid_str, head_simulator_event->uid))
+				    debug("AFTEROK_API: Error in changing dependency")
+			    }
+			//ending job
+			else {
+			    info("SIM: Sending JOB_COMPLETE_BATCH_SCRIPT for job %d", event_jid);
+			    if(_send_complete_batch_script_msg(event_jid, SLURM_SUCCESS, 0) == SLURM_SUCCESS) {
 				pthread_mutex_lock(&epilogs_mutex); //we are in the same thread here
 				waiting_epilog_msgs++;
 				pthread_mutex_unlock(&epilogs_mutex);
 				info("SIM: JOB_COMPLETE_BATCH_SCRIPT for job %d SENT", event_jid);
 				jobs_ended++;
-			} else {
+			    } else {
 				error("SIM: JOB_COMPLETE_BATCH_SCRIPT for job %d NOT SENT", event_jid);
 				_decrement_thd_count();
 				return NULL;
-			} 
+			    }
+			}
 		}
 		pthread_mutex_unlock(&simulator_mutex);
 		last = now;
