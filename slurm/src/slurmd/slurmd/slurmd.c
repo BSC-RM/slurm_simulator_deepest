@@ -716,15 +716,16 @@ _simulator_helper(void *arg)
 			head_sim_completed_jobs = aux;
 			total_sim_events--;
 			/* Manage WF API behavior */
-			if (head_simulator_event->type == WF_API)
-			    if(slurm_wf_move_all_res(2, event_jid))
-				debug("WF_API: Error moving reservarions");
-			    else if (head_simulator_event->type == AFTEROK_API) {
+			if (head_simulator_event->type == WF_API) {
+				if(slurm_wf_move_all_res(2, event_jid))
+					debug("WF_API: Error moving reservarions");
+			}
+			else if (head_simulator_event->type == AFTEROK_API) {
 				char jid_stri[1024];
 				sprintf(jid_str, "%u", event_jid);
 				if (slurm_change_dep(jid_str, head_simulator_event->uid))
-				    debug("AFTEROK_API: Error in changing dependency")
-			    }
+					debug("AFTEROK_API: Error in changing dependency")
+			}
 			//ending job
 			else {
 			    info("SIM: Sending JOB_COMPLETE_BATCH_SCRIPT for job %d", event_jid);
