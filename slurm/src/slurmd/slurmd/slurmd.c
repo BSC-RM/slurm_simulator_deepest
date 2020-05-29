@@ -76,7 +76,7 @@
 #include <semaphore.h>
 
 /* WF APIs */
-#include "slurm_workflow.h"
+#include "slurm/slurm_workflow.h"
 #endif
 
 #include "src/common/assoc_mgr.h"

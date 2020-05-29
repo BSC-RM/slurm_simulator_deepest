@@ -1,7 +1,7 @@
 #!/bin/bash -xe
 workload_name=$(basename $1)
 #change this path
-sim_path="/Users/anajokanovic/SIM_V17_JUELICH/SLURM_SIMULATOR/s_"$$$workload_name"bfq"$2
+sim_path="/root/Work//SLURM_SIMULATOR/s_"$$$workload_name"bfq"$2
 rm -rf $sim_path
 
 mkdir -p $sim_path

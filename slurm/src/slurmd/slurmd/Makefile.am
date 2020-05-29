@@ -9,7 +9,7 @@ depend_libs = $(top_builddir)/src/common/libdaemonize.la \
 	$(top_builddir)/src/bcast/libfile_bcast.la \
 	../common/libslurmd_common.o ../common/libslurmd_reverse_tree_math.la
 
-LIBS = @LIBS@ #-lyajl -lcgraph -lrt -lwf_api
+LIBS = @LIBS@ #-lyajl -lcgraph -lrt -lslurm_workflow_sim
 
 # These 2 depend_* should look the same in ../slurmstepd/Makefile.am
 depend_ldadd = $(HWLOC_LIBS) $(PAM_LIBS) $(UTIL_LIBS)
@@ -18,10 +18,10 @@ depend_ldflags = $(HWLOC_LDFLAGS)
 # This is needed to actually link to the libs that it doesn't use.
 depend_ldflags += -Wl,--no-as-needed
 
-AM_CPPFLAGS = -I$(top_srcdir) $(HWLOC_CPPFLAGS) -I$(WF_API/include)
+AM_CPPFLAGS = -I$(top_srcdir) $(HWLOC_CPPFLAGS) -I$(WF_API/slurm)
 
 slurmd_LDADD = $(depend_libs) $(LIB_SLURM) $(DL_LIBS) $(NUMA_LIBS) \
-	$(depend_ldadd) -L$(WF_API)/lib
+	$(depend_ldadd) -L$(WF_API)/
 
 slurmd_LDFLAGS = -export-dynamic $(CMD_LDFLAGS) $(depend_ldflags)
 
