@@ -583,7 +583,7 @@ int simulator_add_future_event(batch_job_launch_msg_t *req){
 
 		new_event->job_id = req->job_id;
 		new_event->uid = req->uid;
-		if (req->is_delayed_workflow)
+		if (temp_ptr->is_delayed_workflow)
 		    new_event->type = WF_API;
 		else
 		    new_event->type = AFTEROK_API;
@@ -3320,7 +3320,7 @@ _rpc_sim_job(slurm_msg_t *msg)
 		new->job_id = sim_job->job_id;
 		new->duration = sim_job->duration;
 		new->api_call_time = sim_job->api_call_time;
-		new->wf_type = sim_job->wf_type;
+		new->is_delayed_workflow = sim_job->is_delayed_workflow;
 
 		new->next = head_simulator_event_info;
 		head_simulator_event_info = new;

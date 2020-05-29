@@ -721,10 +721,10 @@ _simulator_helper(void *arg)
 					debug("WF_API: Error moving reservarions");
 			}
 			else if (head_simulator_event->type == AFTEROK_API) {
-				char jid_stri[1024];
+				char jid_str[1024];
 				sprintf(jid_str, "%u", event_jid);
 				if (slurm_change_dep(jid_str, head_simulator_event->uid))
-					debug("AFTEROK_API: Error in changing dependency")
+					debug("AFTEROK_API: Error in changing dependency");
 			}
 			//ending job
 			else {

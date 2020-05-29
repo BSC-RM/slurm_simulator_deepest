@@ -4,7 +4,7 @@
  ** */
 
 #define WF_API	    1
-#define AFERTOK_API 0
+#define AFTEROK_API 0
 
 typedef struct simulator_event{
     int job_id;
@@ -18,7 +18,8 @@ typedef struct simulator_event{
 typedef struct simulator_event_info{
     int job_id;
     int duration;
-    int wf_type;
+    int is_delayed_workflow;
+    int api_call_time;
     struct simulator_event_info *next;
 }simulator_event_info_t;
 #endif

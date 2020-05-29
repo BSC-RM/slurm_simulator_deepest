@@ -18,7 +18,7 @@ depend_ldflags = $(HWLOC_LDFLAGS)
 # This is needed to actually link to the libs that it doesn't use.
 depend_ldflags += -Wl,--no-as-needed
 
-AM_CPPFLAGS = -I$(top_srcdir) $(HWLOC_CPPFLAGS) -I$(WF_API/include)
+AM_CPPFLAGS = -I$(top_srcdir) $(HWLOC_CPPFLAGS) -I$(WF_API)/include
 
 slurmd_LDADD = $(depend_libs) $(LIB_SLURM) $(DL_LIBS) $(NUMA_LIBS) \
 	$(depend_ldadd) -L$(WF_API)/lib
