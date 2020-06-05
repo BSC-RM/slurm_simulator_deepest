@@ -368,7 +368,7 @@ with open(current_dir+"/cirne_base_"+str(num_jobs)+"_"+arrival_pattern+"_load_"+
         mwf[18] = "-1"
         mwf[19] = "-1"
         #NAM
-        mwf[21] = "-1"
+        mwf[20] = "-1"
         mwf[21] = "-1"
         mwf[22] = "-1"
         mwf[23] = "-1"
