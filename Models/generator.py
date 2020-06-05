@@ -335,7 +335,7 @@ while i < len(data):
 first_het_id = -1
 with open(current_dir+"/cirne_base_"+str(num_jobs)+"_"+arrival_pattern+"_load_"+str(load_cm)+"_"+str(load_esb)+"_"+str(load_dam)+".mwf",'w') as mwffile:
     for i in range(len(data)):
-        mwf = [""] * 40
+        mwf = [""] * 42
         if is_het[i]:
             if is_first_het[i]:
                 mwf[0] = ldata[i][0]
@@ -366,9 +366,9 @@ with open(current_dir+"/cirne_base_"+str(num_jobs)+"_"+arrival_pattern+"_load_"+
         mwf[16] = "-1"
         mwf[17] = "-1"
         mwf[18] = "-1"
-        #NAM
         mwf[19] = "-1"
-        mwf[20] = "-1"
+        #NAM
+        mwf[21] = "-1"
         mwf[21] = "-1"
         mwf[22] = "-1"
         mwf[23] = "-1"
@@ -385,18 +385,20 @@ with open(current_dir+"/cirne_base_"+str(num_jobs)+"_"+arrival_pattern+"_load_"+
         mwf[34] = "-1"
         mwf[35] = "-1"
         mwf[36] = "-1"
-        mwf[37] = "NA"
+        mwf[37] = "-1"
+        mwf[38] = "-1"
+        mwf[39] = "NA"
         if is_het[i]:
             #dependency with prec job
             if not is_first_het[i]:
                 #precedent job has id == i
-                mwf[36] = str(i)
+                mwf[38] = str(i)
                 if use_het:
-                    mwf[37] = "DYNAMIC"
+                    mwf[39] = "DYNAMIC"
                 else:
-                    mwf[37] = "AFTEROK"
-        mwf[38] = ldata[i][17]
-        mwf[39] = ldata[i][19]
+                    mwf[39] = "AFTEROK"
+        mwf[40] = ldata[i][17]
+        mwf[41] = ldata[i][19]
         
         mwffile.write(';'.join(mwf))
 
