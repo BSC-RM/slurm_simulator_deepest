@@ -220,7 +220,7 @@ char *re_write_dependencies(job_trace_t * jobd) {
 
 	if (trace_format > 2) {	
 		char dep_string[1024];
-		strcpy(dep_string,jobd->after_complition_job_id);
+		strcpy(dep_string,jobd->after_completion_job_id);
 		token = strtok_r(dep_string, ",", &saveptr1);
 		if (strcmp(dep_string,"-1")) {
 			while (token != NULL) {
@@ -229,7 +229,7 @@ char *re_write_dependencies(job_trace_t * jobd) {
 				sprintf(buffer_3[dep_count], "%d", real_job_id);
 				dep_count++;
 				// strtok return the full string when no separator is found
-				if (!strcmp(token,jobd->after_complition_job_id))
+				if (!strcmp(token,jobd->after_completion_job_id))
 					break;
 				token = strtok_r(NULL, ",", &saveptr1);
 			}
