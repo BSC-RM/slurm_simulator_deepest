@@ -197,7 +197,7 @@ int read_job_trace_record_ascii(FILE * trace_file_ptr, job_trace_t *job_trace, i
 	// modular workload format ascii (extended format)
 	if (trace_format == 3) {
 		ret_val = fscanf(trace_file_ptr,
-		"%d;%d;%29[^;];%d;%d;%d;%d;%d;%29[^;];%d;%d;%d;%d;%29[^;];%d;%d;%d;%d;%d;%d;%d;%d;%29[^;];%29[^;];%29[^;];%29[^;];%d;%29[^;];%d;%d;%d;%d;%d;%d;%d;%d;%29[^;];%29[^;];%29[^;];%29[^;];%d:%d", //Zia added last %d
+		"%d;%d;%29[^;];%d;%d;%d;%d;%d;%29[^;];%d;%d;%d;%d;%29[^;];%d;%d;%d;%d;%d;%d;%d;%d;%29[^;];%29[^;];%29[^;];%29[^;];%d;%29[^;];%d;%d;%d;%d;%d;%d;%d;%d;%29[^;];%29[^;];%d;%29[^;];%d;%d", //Zia added last %d
 		&job_trace->modular_job_id,
 		&job_trace->total_components,
 		job_trace->modular_jobname,
@@ -236,13 +236,13 @@ int read_job_trace_record_ascii(FILE * trace_file_ptr, job_trace_t *job_trace, i
 		&job_trace->ralloc_local_storage,
 		job_trace->ralloc_network_features,
 		job_trace->ralloc_licenses,
-		job_trace->after_complition_job_id,
+		&job_trace->after_complition_job_id,
 		job_trace->dependency_type,
 		&job_trace->think_rreq_component_time,
-/*  Zia edit begin  */
-        &job_trace->api_call_time
-/*  Zia edit end    */
-        );
+		/*  Zia edit begin  */
+		&job_trace->api_call_time
+		/*  Zia edit end    */
+		);
 
 		job_trace->job_id = job_trace->modular_job_id;
 		job_trace->submit = job_trace->submit_modular_job_time;
