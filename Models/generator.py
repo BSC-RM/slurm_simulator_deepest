@@ -392,10 +392,8 @@ with open(current_dir+"/cirne_base_"+str(num_jobs)+"_"+arrival_pattern+"_load_"+
             #dependency with prec job
             if not is_first_het[i]:
                 #precedent job has id == i
-                mwf[38] = str(i)
-                if use_het:
-                    mwf[39] = "DYNAMIC"
-                else:
+                if not use_het:
+                    mwf[38] = str(i)
                     mwf[39] = "AFTEROK"
         mwf[40] = ldata[i][17]
         mwf[41] = ldata[i][19]
