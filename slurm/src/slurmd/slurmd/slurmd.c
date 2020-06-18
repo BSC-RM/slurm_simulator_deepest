@@ -710,11 +710,7 @@ _simulator_helper(void *arg)
 			volatile simulator_event_t *aux;
 			int event_jid;
 			event_jid = head_simulator_event->job_id;
-			aux = head_simulator_event;
-			head_simulator_event = head_simulator_event->next;
-			aux->next = head_sim_completed_jobs;
-			head_sim_completed_jobs = aux;
-			total_sim_events--;
+
 			/* Manage WF API behavior */
 			if (head_simulator_event->type == WF_API) {
 				if(slurm_wf_move_all_res(2, event_jid))
@@ -741,6 +737,12 @@ _simulator_helper(void *arg)
 				return NULL;
 			    }
 			}
+
+			aux = head_simulator_event;
+			head_simulator_event = head_simulator_event->next;
+			aux->next = head_sim_completed_jobs;
+			head_sim_completed_jobs = aux;
+			total_sim_events--;
 		}
 		pthread_mutex_unlock(&simulator_mutex);
 		last = now;
