@@ -361,9 +361,9 @@ with open(current_dir+"/cirne_base_"+str(num_jobs)+"_"+arrival_pattern+"_load_"+
         mwf[11] = "0"
         mwf[12] = "-1"
         mwf[13] = ldata[i][15]
-        mwf[14] = ldata[i][7]
-        mwf[15] = "-1"
-        mwf[16] = "-1"
+        mwf[14] = ldata[i][4]
+        mwf[15] = "1"
+        mwf[16] = "1"
         mwf[17] = "-1"
         mwf[18] = "-1"
         mwf[19] = "-1"
