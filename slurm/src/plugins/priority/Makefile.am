@@ -1,1 +1,1 @@
-SUBDIRS = basic multifactor multifactor_energy
+SUBDIRS = basic multifactor

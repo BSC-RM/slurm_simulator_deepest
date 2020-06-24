@@ -9,7 +9,7 @@ depend_libs = $(top_builddir)/src/common/libdaemonize.la \
 	$(top_builddir)/src/bcast/libfile_bcast.la \
 	../common/libslurmd_common.o ../common/libslurmd_reverse_tree_math.la
 
-LIBS = @LIBS@ #-lyajl -lcgraph -lrt -lslurm_workflow_sim
+LIBS = @LIBS@ -lslurm_workflow_sim #-lyajl -lcgraph -lrt -lslurm_workflow_sim
 
 # These 2 depend_* should look the same in ../slurmstepd/Makefile.am
 depend_ldadd = $(HWLOC_LIBS) $(PAM_LIBS) $(UTIL_LIBS)

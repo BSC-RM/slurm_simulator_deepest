@@ -259,6 +259,7 @@ int read_job_trace_record_ascii(FILE * trace_file_ptr, job_trace_t *job_trace, i
 		job_trace->qosname[0] = '\0';
 		job_trace->reservation[0] = '\0';
 		job_trace->dependency[0] = '\0';
+		job_trace->module_list[0] = '\0';
 
 		strcpy(job_trace->manifest_filename, "|\0");
 		if (!ret_val)
