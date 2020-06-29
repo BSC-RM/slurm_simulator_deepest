@@ -593,7 +593,7 @@ int simulator_add_future_event(batch_job_launch_msg_t *req){
 
 		total_sim_events++;
 		volatile simulator_event_t *node_temp = head_simulator_event;
-		info("SIM: Adding new WF event for job %d in the event list for future time %ld", new_event->job_id, new_event->when);
+		info("SIM: API: Adding new WF event for job %d in the event list for future time %ld", new_event->job_id, new_event->when);
 
 		if(head_simulator_event->when > new_event->when){
 			new_event->next = head_simulator_event;
@@ -3321,7 +3321,7 @@ _rpc_sim_job(slurm_msg_t *msg)
 		new->duration = sim_job->duration;
 		new->api_call_time = sim_job->api_call_time;
 		new->is_delayed_workflow = sim_job->is_delayed_workflow;
-
+		info("API: Job has a API call at start_time + %d", sim_job->api_call_time);
 		new->next = head_simulator_event_info;
 		head_simulator_event_info = new;
 

@@ -713,12 +713,14 @@ _simulator_helper(void *arg)
 
 			/* Manage WF API behavior */
 			if (head_simulator_event->type == WF_API) {
+				debug("WF_API: calling slurm_wf_move_all_res");
 				if(slurm_wf_move_all_res(2, event_jid))
 					debug("WF_API: Error moving reservarions");
 			}
 			else if (head_simulator_event->type == AFTEROK_API) {
 				char jid_str[1024];
 				sprintf(jid_str, "%u", event_jid);
+				debug("AFTEROK_API: calling slurm_change_dep");
 				if (slurm_change_dep(jid_str, head_simulator_event->uid))
 					debug("AFTEROK_API: Error in changing dependency");
 			}
