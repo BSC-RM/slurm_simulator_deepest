@@ -113,7 +113,8 @@ char   help_msg[]= "sim_mgr [endtime]\n\t[-c | --compath <cpath>]\n\t[-f | "
 		   "\t\tvalue is 1.\n";
 
 /* Function prototypes */
-void  generateJob(job_trace_t* jobd, List *job_req_list, int modular_jobid, int *duration);
+/*  Zia edit begin  */
+void  generateJob(job_trace_t* jobd, List *job_req_list, int modular_jobid, int *duration, int *api_call_time);
 void generate_job_desc_msg(job_desc_msg_t* dmesg, job_trace_t* jobd);
 void  dumping_shared_mem();
 void  fork_daemons(int idx);
@@ -343,6 +344,9 @@ time_mgr(void *arg) {
 	struct timeval t_start, t_end, i_loop;
 	int i, j, total_comp = 0, modular_jobid = 0;
 	int * duration = NULL;
+	/*  Zia edit begin  */
+	int *api_call_time = NULL;
+	/*  Zia edit end  */
 
 	printf("INFO: Creating time_mgr thread\n");
 
@@ -477,7 +481,11 @@ time_mgr(void *arg) {
 					// first position of duration array will have the number of total_components
 					// the rest of the positions will have the duration of each job pack			
 					duration = (int *) calloc(total_comp+1, sizeof(int));
+					/*  Zia edit begin  */
+					api_call_time = (int *) calloc(total_comp, sizeof(int));
+					/*  Zia edit end  */
 					duration[0] = total_comp;
+
 
 					job_req_list = list_create(NULL);
 
@@ -492,17 +500,27 @@ time_mgr(void *arg) {
 						generate_job_desc_msg(dmesg, trace_head);
 						duration[comp+1] = trace_head->duration;
 
+					/*  Zia edit begin  */
+						api_call_time[comp] = trace_head->api_call_time;
+					/*  Zia edit end  */
 						/* Let's free trace record */
 						temp_ptr = trace_head;
 						trace_head = trace_head->next;
 						free(temp_ptr);
 					}
-					generateJob (trace_head, &job_req_list, modular_jobid, duration);
+					/*  Zia edit begin  */
+					generateJob (trace_head, &job_req_list, modular_jobid, duration, api_call_time);
+					/*  Zia edit end  */
 
 					free(duration);
+					/*  Zia edit begin  */
+					free(api_call_time);
+					/*  Zia edit end  */
 				}
 				else {
-					generateJob (trace_head, &job_req_list, 0, NULL);
+					/*  Zia edit begin  */
+					generateJob (trace_head, &job_req_list, 0, NULL, NULL);
+					/*  Zia edit end  */
 
 					/* Let's free trace record */
 					temp_ptr = trace_head;
@@ -787,8 +805,10 @@ void generate_job_desc_msg(job_desc_msg_t* dmesg, job_trace_t* jobd) {
 		}
 }
 
+/*  Zia edit begin  */
 void
-generateJob(job_trace_t* jobd, List *job_req_list, int modular_jobid, int * duration) {
+generateJob(job_trace_t* jobd, List *job_req_list, int modular_jobid, int * duration, int *api_call_time) {
+/*  Zia edit end  */
 	job_desc_msg_t dmesg;
         job_desc_msg_t dmesg1 /*,dmesg2*/; // SHould it be declared somewhere else?
 	submit_response_msg_t respMsg, *rptr = &respMsg, respMsg1, *rptr1 = &respMsg1 /*, respMsg2, *rptr2 = &respMsg2*/;
@@ -993,7 +1013,7 @@ generateJob(job_trace_t* jobd, List *job_req_list, int modular_jobid, int * dura
 			req.duration     = duration[comp+1];
 			req_msg.msg_type = REQUEST_SIM_JOB;
 /*  Zia edit begin  */
-            req.api_call_time = jobd->api_call_time;
+            req.api_call_time = api_call_time[comp];
             req.is_delayed_workflow = true;
 /*  Zia edit end  */           		 
             req_msg.data     = &req;
