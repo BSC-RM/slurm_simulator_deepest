@@ -558,7 +558,7 @@ int simulator_add_future_event(batch_job_launch_msg_t *req){
 			new_event->next = head_simulator_event;
 			head_simulator_event = new_event;
 			pthread_mutex_unlock(&simulator_mutex);
-			return 0;
+			goto api_call_check;
 		}
 
 		while((node_temp->next) && (node_temp->next->when < new_event->when))
@@ -568,10 +568,11 @@ int simulator_add_future_event(batch_job_launch_msg_t *req){
 			new_event->next = node_temp->next;
 			node_temp->next = new_event;
 			pthread_mutex_unlock(&simulator_mutex);
-			return 0;
+			goto api_call_check;
 		}
 		node_temp->next = new_event;
 	}
+api_call_check:
 	/* Check if call of WF API is associated with this job and create a new event */
 	if (temp_ptr->api_call_time) {
 		new_event = (simulator_event_t *)malloc(sizeof(simulator_event_t));
@@ -613,6 +614,7 @@ int simulator_add_future_event(batch_job_launch_msg_t *req){
 		}
 		node_temp->next = new_event;
         }
+	else debug ("API: This job has no API call time");
 	pthread_mutex_unlock(&simulator_mutex);
 	return 0;
 }
