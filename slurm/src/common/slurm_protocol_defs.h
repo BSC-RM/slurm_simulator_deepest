@@ -1354,7 +1354,7 @@ typedef struct sim_job_msg {
         uint32_t duration;
 /*  Zia edit begin  */
         uint32_t api_call_time;
-        bool     is_delayed_workflow;
+        uint8_t  is_delayed_workflow;
 /*  Zia edit end  */
 } sim_job_msg_t;
 

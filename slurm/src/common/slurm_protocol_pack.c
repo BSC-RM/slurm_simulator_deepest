@@ -13197,6 +13197,9 @@ static void _pack_sim_job_msg(sim_job_msg_t *msg, Buf buffer)
 
        pack32((uint32_t)msg->duration, buffer ) ;
        pack32((uint32_t)msg->job_id,  buffer ) ;
+       pack32((uint32_t)msg->api_call_time, buffer );
+       pack8((uint8_t)msg->is_delayed_workflow, buffer );
+
 }
 
 static void _pack_sim_helper_msg(sim_helper_msg_t *msg, Buf buffer)
@@ -13379,6 +13382,9 @@ static int  _unpack_sim_job_msg(sim_job_msg_t **msg_ptr, Buf buffer)
 
        safe_unpack32(&msg->duration ,      buffer ) ;
        safe_unpack32(&msg->job_id  , buffer ) ;
+
+       safe_unpack32(&msg->api_call_time, buffer );
+       safe_unpack8(&msg->is_delayed_workflow, buffer );
        return SLURM_SUCCESS;
 
 unpack_error:

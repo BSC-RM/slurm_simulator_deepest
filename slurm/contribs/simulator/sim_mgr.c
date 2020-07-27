@@ -1010,10 +1010,10 @@ generateJob(job_trace_t* jobd, List *job_req_list, int modular_jobid, int * dura
 			slurm_msg_t_init(&req_msg);
 			slurm_msg_t_init(&resp_msg);
 			req.job_id       = rptr->job_id + comp;
-			req.duration     = duration[comp+1];
+			req.duration     = (uint32_t) duration[comp+1];
 			req_msg.msg_type = REQUEST_SIM_JOB;
 /*  Zia edit begin  */
-            req.api_call_time = api_call_time[comp];
+            req.api_call_time = (uint32_t) api_call_time[comp];
             req.is_delayed_workflow = true;
 /*  Zia edit end  */           		 
             req_msg.data     = &req;

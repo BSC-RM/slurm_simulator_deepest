@@ -244,6 +244,9 @@ int read_job_trace_record_ascii(FILE * trace_file_ptr, job_trace_t *job_trace, i
 		/*  Zia edit end    */
 		);
 
+		if (job_trace->api_call_time == -1)
+		    job_trace->api_call_time = 0;
+
 		job_trace->job_id = job_trace->modular_job_id;
 		job_trace->submit = job_trace->submit_modular_job_time;
 		job_trace->duration = job_trace->component_run_time;
@@ -254,7 +257,7 @@ int read_job_trace_record_ascii(FILE * trace_file_ptr, job_trace_t *job_trace, i
 
 		strcpy(job_trace->partition, job_trace->rreq_partition_name);
 		strcpy(job_trace->username, "tester");
-		strcpy(job_trace->account, "1000"); 
+		strcpy(job_trace->account, "1000");
 
 		job_trace->qosname[0] = '\0';
 		job_trace->reservation[0] = '\0';
