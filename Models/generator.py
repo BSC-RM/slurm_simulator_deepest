@@ -299,8 +299,30 @@ while i < len(data):
         ncomp = 1
         iprec = i
         inext = i + 1
+        cm_count = 0
+        dam_count = 0
+        esb_count = 0
+        if ldata[iprec][15] == "cm":
+            cm_count = int(ldata[iprec][4])
+        else:
+            if ldata[iprec][15] == "esb":
+                esb_count = int(ldata[iprec][4])
+            else:
+                if ldata[iprec][15] == "dam":
+                    dam_count = int(ldata[iprec][4])
         #extend SWF with two fields
         while r1 <= perc_wf_jobs and ncomp < max_wf_jobs and inext < len(data):
+ 
+            if ldata[inext][15] == "cm":
+                cm_count += int(ldata[inext][4])
+            else:
+                if ldata[inext][15] == "esb":
+                    esb_count += int(ldata[inext][4])
+                else:
+                    if ldata[inext][15] == "dam":
+                        dam_count += int(ldata[inext][4])
+            if cm_count > cm_size or dam_count > dam_size or esb_count > esb_size:
+                break;
             #calculate delay from requested time
             req_delay = round(uniform(0.5,0.9) * float(ldata[iprec][8]))
             #calculate actual delay from duration
