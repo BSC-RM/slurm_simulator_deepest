@@ -311,6 +311,7 @@ while i < len(data):
                 if ldata[iprec][15] == "dam":
                     dam_count = int(ldata[iprec][4])
         #extend SWF with two fields
+        ldata[iprec][17] = "0"
         while r1 <= perc_wf_jobs and ncomp < max_wf_jobs and inext < len(data):
  
             if ldata[inext][15] == "cm":
@@ -330,7 +331,7 @@ while i < len(data):
             if req_delay < api_call:
                 api_call = -1
             ldata[inext][16] = ldata[iprec][0]
-            ldata[inext][17] = str(req_delay)
+            ldata[inext][17] = str(req_delay + int(ldata[iprec][17]))
             ldata[iprec][19] = str(api_call)+'\n'
             
             #If hetjob set same arrival time of precedent job (initially also for jobs with deps)
@@ -417,7 +418,10 @@ with open(current_dir+"/cirne_base_"+str(num_jobs)+"_"+arrival_pattern+"_load_"+
                 if not use_het:
                     mwf[38] = str(i)
                     mwf[39] = "AFTEROK"
-        mwf[40] = ldata[i][17]
+        if ldata[i][17] is "0":
+            mwf[40] = "-1"
+        else:
+            mwf[40] = ldata[i][17]
         mwf[41] = ldata[i][19]
         
         mwffile.write(';'.join(mwf))
