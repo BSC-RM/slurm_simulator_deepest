@@ -185,6 +185,7 @@ struct jobcomp_info {
 	double best_freq;
 	double best_energy;
 	double def_energy;
+	char *workflow_id_set;
 };
 
 static struct jobcomp_info * _jobcomp_info_create (struct job_record *job)
@@ -293,6 +294,7 @@ static struct jobcomp_info * _jobcomp_info_create (struct job_record *job)
 		j->best_energy = job->best_energy[i];
 		j->def_energy = job->def_energy[i];
 	}
+	j->workflow_id_set = xstrdup(job->workflow_id_set);
 
 	return (j);
 }
@@ -319,6 +321,7 @@ static void _jobcomp_info_destroy(void *arg)
 	xfree (j->user_name);
 	xfree (j->work_dir);
 	xfree(j->selected_part);
+	xfree(j->workflow_id_set);
 	xfree (j);
 }
 
@@ -482,6 +485,7 @@ static char ** _create_environment (struct jobcomp_info *job)
 		_env_append_fmt (&env, "ENERGY", "%lf", job->best_energy);
 		_env_append_fmt (&env, "DEF_ENERGY", "%lf", job->def_energy);
 	}
+	_env_append (&env, "WF_ID", job->workflow_id_set);
 	return (env);
 }
 

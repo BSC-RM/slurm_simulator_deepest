@@ -75,12 +75,6 @@ killall -9 slurmdbd
 killall -9 sim_mgr
 
 #generate output
-printf 'JobId;Nodes;NodeList;Submit time;Start time;End time;Wait time;Run time;Response time;Slowdown;Backfilled;Frequency;Energy;DefEnergy;Partition\n' > "o_"$workload_name".csv"
+printf 'JobId;Nodes;NodeList;Submit time;Start time;End time;Wait time;Run time;Response time;Slowdown;Backfilled;Frequency;Energy;DefEnergy;Partition;AppId;WorkflowID;Dependency\n' > "o_"$workload_name".csv"
 
-cat TRACES/trace.test.$$ | sed -e 's!JobId=!!' | sort -n | awk '{print "JobId="$1,$13,$12,$9,$10,$11,$16,$17,$18,$19,$7}' | awk '-F[=/ /]' '{split($0,a); printf("%d;%d;%s;%d;%d;%d;%d;%d;%d;%f;%d;%f;%f;%f;%s\n",a[2],a[4],a[6],a[8],a[10],a[12],a[10]-a[8],a[12]-a[10],a[12]-a[8],(a[12]-a[8])/(a[12]-a[10]),a[14],a[16],a[18],a[20],a[22]) }' >> "o_"$workload_name".csv"
-
-#cat TRACES/trace.test.$$ | sed -e 's!JobId=!!' | sort -n | awk '{print "JobId="$1,$12,$11,$8,$9,$10,$15}' | awk '-F[=/ /]' '{split($0,a); printf("%d;%d;%s;%d;%d;%d;%d;%d;%d;%f;%d\n",a[2],a[4],a[6],a[8],a[10],a[12],a[10]-a[8],a[12]-a[10],a[12]-a[8],(a[12]-a[8])/(a[12]-a[10]),a[14]) }' >> "o_"$workload_name".csv"
-
-#cat TRACES/trace.test.$$ | sed -e 's!JobId=!!' | sort -n | awk '{print $8,$9,$10,$15}' | awk -F'[=/ /]' '{split($0,a); print a[2], a[4], a[6], a[8] }' > "o_"$workload_name
-
-#cat TRACES/trace.test.$$ | sed -e 's!JobId=!!' | sort -n | awk '{ print $1,$7,$8,$9,$10,$13 }' | awk -F'[=/ /]' '{split($0,a); printf("%s\t%s\t%s\t%s\t%s\t-1\t-1\t%s\t%s\t-1\t1\t-1\t-1\t-1\t-1\t-1\t-1\t-1\n",a[1]-1,a[5],a[7]-a[5],a[9]-a[7],a[11],a[11],a[3])}' > "o_"$workload_name".swf"
+cat TRACES/trace.test.$$ | sed -e 's!JobId=!!'| sort -n | awk '{print "JobId="$1,$13,$12,$9,$10,$11,$16,$17,$18,$19,$7,$20,$21,$22}' | awk '-F[=/ /]' '{split($0,a); printf("%d;%d;%s;%d;%d;%d;%d;%d;%d;%f;%d;%f;%f;%f;%s;%d;%d;%s\n",a[2],a[4],a[6],a[8],a[10],a[12],a[10]-a[8],a[12]-a[10],a[12]-a[8],(a[12]-a[8])/(a[12]-a[10]),a[14],a[16],a[18],a[20],a[22],a[24],a[26],a[28]) }' >> "o_"$workload_name".csv"
