@@ -11,6 +11,15 @@
 
 echo "JobId=$JOBID UserId=$UID GroupId=$GID Name=$JOBNAME JobState=$JOBSTATE ReqPartition=$REQ_PARTITION Partition=$PARTITION TimeLimit=$LIMIT SubmitTime=$SUBMIT StartTime=$START EndTime=$END NodeList=$NODES NodeCnt=$NODECNT ProcCnt=$PROCS WorkDir=$WORK_DIR Backfilled=$BACKFILLED Freq=$FREQ Energy=$ENERGY DefEnergy=$DEF_ENERGY WorkflowID=$WF_ID Dependency=$DEPENDENCY" >> {DIR_WORK}/TRACES/trace.test.{ID_JOB}
 
+#Remove the reservation id it is a workflow job
+if [ "$WF_ID" != "" ] 
+then
+#This is a workflow related job. Get the reservation name and delete it.
+	echo "Here" >> {DIR_WORK}/TRACES/trace.test.{ID_JOB}
+	`{DIR_WORK}/slurm_varios/run_command.sh scontrol delete ReservationName=$RESERVATION`
+fi
+
+
 #The plugin sets up the environment for the program to contain the following variables:
 #ACCOUNT:   Job's account value
 #BATCH:     Was the job submitted as a batch job ("yes" or "no")
