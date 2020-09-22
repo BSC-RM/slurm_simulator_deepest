@@ -1,7 +1,7 @@
 #!/bin/bash -xe
 workload_name=$(basename $1)
 #change this path
-sim_path="/root/Work//SLURM_SIMULATOR/s_"$$$workload_name"bfq"$2
+sim_path=$PWD"/s_"$$$workload_name
 rm -rf $sim_path
 
 mkdir -p $sim_path
@@ -29,6 +29,10 @@ user=`(whoami)`
 
 openssl genrsa -out $sim_path/slurm_conf/slurm.key 1024
 openssl rsa -in $sim_path/slurm_conf/slurm.key -pubout -out $sim_path/slurm_conf/slurm.cert
+#create script to run commands
+sed -e s:TOKEN_PATH:$sim_path: \
+        "run_command.template" > $sim_path"/slurm_varios/run_command.sh"
+chmod +x $sim_path"/slurm_varios/run_command.sh"
 
 cd $sim_path
 
