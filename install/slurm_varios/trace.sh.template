@@ -15,7 +15,6 @@ echo "JobId=$JOBID UserId=$UID GroupId=$GID Name=$JOBNAME JobState=$JOBSTATE Req
 if [ "$WF_ID" != "" ] 
 then
 #This is a workflow related job. Get the reservation name and delete it.
-	echo "Here" >> {DIR_WORK}/TRACES/trace.test.{ID_JOB}
 	`{DIR_WORK}/slurm_varios/run_command.sh scontrol delete ReservationName=$RESERVATION`
 fi
 
