@@ -6,4 +6,4 @@ export PATH=$sim_path/slurm_programs/sbin:$PATH
 export SLURM_CONF=$sim_path/slurm_conf/slurm.conf
 export SIM_DAEMONS_PATH=$sim_path/slurm_programs/sbin
 
-$1
+$@
