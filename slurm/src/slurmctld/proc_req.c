@@ -2522,9 +2522,6 @@ static void _slurm_rpc_complete_batch_script(slurm_msg_t *msg,
 
 	/* init */
 	START_TIMER;
-	pthread_mutex_lock(&lock_finishing_jobs);
-	total_finished_jobs+=1;
-	pthread_mutex_unlock(&lock_finishing_jobs);
 	debug2("Processing RPC: REQUEST_COMPLETE_BATCH_SCRIPT from "
 	       "uid=%u JobId=%u",
 	       uid, comp_msg->job_id);
@@ -2561,6 +2558,15 @@ static void _slurm_rpc_complete_batch_script(slurm_msg_t *msg,
 		return;
 	}
 
+	pthread_mutex_lock(&lock_finishing_jobs);
+	if (job_ptr->pack_job_id && job_ptr->pack_job_id != NO_VAL) {
+		pthread_mutex_lock(&lock_remaining_epilogs);
+		arrived_jobs_epilogs -= list_count(job_ptr->pack_job_list) - 1;
+		pthread_mutex_unlock(&lock_remaining_epilogs);
+		debug("This is a jobpack, size %d. Expecting more jobs to terminate", list_count(job_ptr->pack_job_list));
+	}
+	total_finished_jobs+=1;
+	pthread_mutex_unlock(&lock_finishing_jobs);
 	/*
 	 * Send batch step info to accounting, only if the job is
 	 * still completing.

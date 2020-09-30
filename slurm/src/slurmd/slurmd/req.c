@@ -603,7 +603,6 @@ simulator_rpc_batch_job(slurm_msg_t *msg)
 
 	simulator_add_future_event(req);
 
-
 }
 #endif
 
@@ -3645,13 +3644,7 @@ simulator_rpc_terminate_job(slurm_msg_t *rec_msg)
 	if((head_sim_completed_jobs) && (head_sim_completed_jobs->job_id == req_kill->job_id)){
 		head_sim_completed_jobs = head_sim_completed_jobs->next;
 	}else{
-
 		temp = head_sim_completed_jobs;
-		if(!temp){
-			info("SIM: Error, no event found for completed job %d T1\n", req_kill->job_id);
-			pthread_mutex_unlock(&simulator_mutex);
-			return;
-		}
 
 		while (temp) {
 			if (temp->job_id==req_kill->job_id) {
@@ -3664,8 +3657,23 @@ simulator_rpc_terminate_job(slurm_msg_t *rec_msg)
 			event_sim=temp;
 			prev->next=temp->next;
 		} else {
-			info("SIM: Error, no event found for completed job %d T2\n", req_kill->job_id);
 			pthread_mutex_unlock(&simulator_mutex);
+
+			//jobpacks components do not receive batch launch message,
+			//so their end time event is never recorded
+			if (req_kill->pack_jobid || req_kill->pack_jobid != NO_VAL) {
+				info("SIM: no event found, but this is a jobpack");
+				hl = hostlist_create(req_kill->nodes);
+				node_name = hostlist_shift(hl);
+
+				pthread_mutex_lock(&epilogs_mutex);
+				waiting_epilog_msgs++;
+				pthread_mutex_unlock(&epilogs_mutex);
+
+				goto send_resp;	
+			}
+			//if no event found and not a jobpack
+			info("SIM: Error, no event found for completed job %d T2\n", req_kill->job_id);
 			return;
 		}
 	}
@@ -3676,7 +3684,7 @@ simulator_rpc_terminate_job(slurm_msg_t *rec_msg)
 
 	/* With FRONTEND just one epilog complete message is needed */
 	node_name = hostlist_shift(hl);
-
+send_resp:
 	info("SIM: Sending epilog complete message for job %d node %s", req_kill->job_id, node_name);
 	slurm_msg_t_init(&msg);
 
