@@ -8721,6 +8721,7 @@ extern bool test_job_nodes_ready(struct job_record *job_ptr)
 		if ((select_g_job_ready(job_ptr) & READY_NODE_STATE) == 0)
 			return false;
 	} else if (job_ptr->batch_flag) {
+#ifndef SLURM_SIMULATOR
 		/* Make sure first node is ready to start batch job */
 		struct node_record *node_ptr =
 			find_node_record(job_ptr->batch_host);
@@ -8729,6 +8730,7 @@ extern bool test_job_nodes_ready(struct job_record *job_ptr)
 		    IS_NODE_POWER_UP(node_ptr)) {
 			return false;
 		}
+#endif
 	}
 
 	return true;

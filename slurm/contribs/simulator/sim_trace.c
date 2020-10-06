@@ -150,7 +150,9 @@ int read_job_trace_record_ascii(FILE * trace_file_ptr, job_trace_t *job_trace, i
 
                 if(job_trace->wclimit == -1)
                     job_trace->wclimit = MAX(1,ceil((float)(job_trace->duration/60))*2);   // We set wclimit as twice the job duration if SWF does not have wclimit info. TODO Add a model.  
-                job_trace->duration = MAX(1,job_trace->duration);
+                else
+			job_trace->wclimit = (int) ceil((float) job_trace->wclimit / 60.0f);
+		job_trace->duration = MAX(1,job_trace->duration);
                 
                 if(job_trace->tasks == 0){
                     printf("sim_trace: Trace contains jobs with job_trace->tasks %u\n", job_trace->tasks );
@@ -250,7 +252,7 @@ int read_job_trace_record_ascii(FILE * trace_file_ptr, job_trace_t *job_trace, i
 		job_trace->job_id = job_trace->modular_job_id;
 		job_trace->submit = job_trace->submit_modular_job_time;
 		job_trace->duration = job_trace->component_run_time;
-		job_trace->wclimit = job_trace->modular_requested_time;
+		job_trace->wclimit = (int) ceil((float) job_trace->modular_requested_time / 60.0f);
 		job_trace->tasks = job_trace->rreq_nodes * job_trace->rreq_processes_per_node;
 		job_trace->cpus_per_task = 	job_trace->rreq_threads_per_process;
 		job_trace->tasks_per_node = job_trace->rreq_processes_per_node;

@@ -424,8 +424,6 @@ with open(current_dir+"/cirne_base_"+str(num_jobs)+"_"+arrival_pattern+"_load_"+
             mwf[40] = ldata[i][17]
         mwf[41] = ldata[i][19]
         
-        mwffile.write(';'.join(mwf))
-
 #Loop between single jobs and assign a dependency with the following job. If a dependency is created the following job arrival time is modified to current job arrival time.
 
 
