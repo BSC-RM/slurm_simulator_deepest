@@ -1,6 +1,9 @@
 ##########################################################################################
 #
-#  INPUT: 
+#  Two inputs from command line: 
+#   - create trace from Cirne model or use existing one
+#   - use heterogenous jobs or jobs with dependencies
+#  INPUT: create/nocreate 0/1
 #  OUTPUT 
 #  How big traces?
 #  System size, deepest or bigger?
@@ -10,13 +13,18 @@
 # 
 ##########################################################################################
 
-
+import sys
 import subprocess
 import os
-from random import randint
-from random import seed
-from random import uniform
-seed(1)
+import numpy as np
+#from random import randint
+#from random import seed
+#from random import uniform
+#seed(1)
+#3k jobs workload: 
+#np.random.seed(42)
+#300 jobs workload:
+np.random.seed(37)
 
 # Cirne base model was fixed so that: 
 # 1) traces are in SWF format, and 
@@ -72,7 +80,8 @@ def create_template_trace(module,num_nodes,num_jobs,arr_pattern,load):
 # Label single-/multi-module is written in userid field of SWF trace
 def label_single_multi_jobs(i):
     global data
-    random_value = randint(0,100)
+    #random_value = randint(0,99)
+    random_value = np.random.randint(0,100)
     if random_value <= single_module_percent: 
         data[i]=data[i].replace(data[i].split(';')[11], "single-module")
     else: 
@@ -89,9 +98,6 @@ def edit_modlist(filename,modlist):
     # the latter might be the case if we want to pass swf trace with modlist field to creation of wf and hetero jobs file
     # only change data list if filename is basic flexibility case: modlistfile. 
 
-
-
-
 ##########################################################################################
 #
 #			TEMPLATE SWF TRACES FROM BASE WORKLOAD MODEL	
@@ -107,7 +113,7 @@ def edit_modlist(filename,modlist):
 
 base_model_path = "cirne/genworkload"
 
-num_jobs=100
+num_jobs=1000
 arrival_pattern="anl"
 
 load_cm=0.76
@@ -118,9 +124,10 @@ cm_size=50
 esb_size=75
 dam_size=16
 
-create_template_trace("cm",cm_size,num_jobs,arrival_pattern,load_cm)
-create_template_trace("esb",esb_size,num_jobs,arrival_pattern,load_esb)
-create_template_trace("dam",dam_size,num_jobs,arrival_pattern,load_dam)
+if sys.argv[1] == "create":
+    create_template_trace("cm",cm_size,num_jobs,arrival_pattern,load_cm)
+    create_template_trace("esb",esb_size,num_jobs,arrival_pattern,load_esb)
+    create_template_trace("dam",dam_size,num_jobs,arrival_pattern,load_dam)
 
 ##########################################################################################
 #
@@ -129,12 +136,12 @@ create_template_trace("dam",dam_size,num_jobs,arrival_pattern,load_dam)
 ##########################################################################################
 
 # Concatenate three trace files in tmp.swf file
-filenames = [current_dir+"/tmp.cm.swf", current_dir+"/tmp.esb.swf", current_dir+"/tmp.dam.swf" ]
-with open(current_dir+"/tmp.concatenated.swf",'w') as outfile:
-    for fname in filenames:
-        with open(fname) as infile:
-            for line in infile:
-                outfile.write(line)
+    filenames = [current_dir+"/tmp.cm.swf", current_dir+"/tmp.esb.swf", current_dir+"/tmp.dam.swf" ]
+    with open(current_dir+"/tmp.concatenated.swf",'w') as outfile:
+        for fname in filenames:
+            with open(fname) as infile:
+                for line in infile:
+                    outfile.write(line)
 
 f=(current_dir+"/tmp.concatenated.swf")
 data=open(f).readlines()
@@ -202,7 +209,8 @@ with open(current_dir+"/cirne_modlist_"+str(num_jobs)+"_"+arrival_pattern+"_load
                     module=data[i].split(';')[15]
                     if module=="cm":
                         edit_modlist(modlistfile,modlist1)
-                        r1=randint(0,100)
+                        #r1=randint(0,99)
+                        r1 = np.random.randint(0,100)
                         if r1 <= cm_flex+lowflex:
                             edit_modlist(modlist_lowflex_file,modlist1)
                             edit_modlist(modlist_modflex_file,modlist1)
@@ -213,7 +221,8 @@ with open(current_dir+"/cirne_modlist_"+str(num_jobs)+"_"+arrival_pattern+"_load
                             edit_modlist(modlist_lowflex_file,empty)
                             edit_modlist(modlist_modflex_file,empty)
                     elif module=="esb":
-                        r2=randint(0,100)
+                        #r2=randint(0,99)
+                        r2 = np.random.randint(0,100)
                         if r2 <= esb_flex+lowflex:
                             edit_modlist(modlistfile,modlist2)
                             edit_modlist(modlist_lowflex_file,modlist2)
@@ -231,8 +240,10 @@ with open(current_dir+"/cirne_modlist_"+str(num_jobs)+"_"+arrival_pattern+"_load
                             edit_modlist(modlist_lowflex_file,empty)
                             edit_modlist(modlist_modflex_file,empty)
                     elif module=="dam":
-                        r3=randint(0,100)    
-                        r4=randint(0,100)    
+                        #r3=randint(0,99)    
+                        #r4=randint(0,99)
+                        r3 = np.random.randint(0,100)
+                        r4 = np.random.randint(0,100)
                         if r3 <= dam_flex+lowflex:
                             if r4 <= dam_flex_1:
                                 edit_modlist(modlistfile,modlist3)
@@ -280,10 +291,10 @@ with open(current_dir+"/cirne_modlist_"+str(num_jobs)+"_"+arrival_pattern+"_load
 
 #parameters
 max_wf_jobs = 3
-perc_wf_jobs = 20
+perc_wf_jobs = 12
 is_het = [0] * len(data)
 is_first_het = [0] * len(data)
-use_het=1
+use_het=int(sys.argv[2])
 
 #much easier to mange data as a list
 ldata=[]
@@ -295,7 +306,8 @@ i = 0
 while i < len(data):
     job_type = data[i].split(';')[11]
     if job_type == "single-module":
-        r1 = randint(0,100)
+        #r1 = randint(0,99)
+        r1 = np.random.randint(0,1000)
         ncomp = 1
         iprec = i
         inext = i + 1
@@ -312,8 +324,8 @@ while i < len(data):
                     dam_count = int(ldata[iprec][4])
         #extend SWF with two fields
         ldata[iprec][17] = "0"
-        while r1 <= perc_wf_jobs and ncomp < max_wf_jobs and inext < len(data):
- 
+        while r1 < (perc_wf_jobs*10) and ncomp < max_wf_jobs and inext < len(data):
+            #check job pack size within system size
             if ldata[inext][15] == "cm":
                 cm_count += int(ldata[inext][4])
             else:
@@ -325,105 +337,120 @@ while i < len(data):
             if cm_count > cm_size or dam_count > dam_size or esb_count > esb_size:
                 break;
             #calculate delay from requested time
-            req_delay = round(uniform(0.5,0.9) * float(ldata[iprec][8]))
+            req_delay = int(round(np.random.uniform(0.5,0.9) * float(ldata[iprec][8])))
             #calculate actual delay from duration
-            api_call = round(uniform(0.5,0.9) * float(ldata[iprec][3]))
+            api_call = int(round(np.random.uniform(0.5,0.9) * float(ldata[iprec][3])))
             if req_delay < api_call:
                 api_call = -1
             ldata[inext][16] = ldata[iprec][0]
-            ldata[inext][17] = str(req_delay + int(ldata[iprec][17]))
+            if use_het:
+                ldata[inext][17] = str(req_delay + int(ldata[iprec][17]))
             ldata[iprec][19] = str(api_call)+'\n'
             
-            #If hetjob set same arrival time of precedent job (initially also for jobs with deps)
+            #If hetjob set same arrival time of precedent job (also for jobs with deps to keep workloads comparable)
             ldata[inext][1] = ldata[iprec][1]
             ldata[inext][1] = ldata[iprec][1]
-            r1 = randint(0,100)
+            #r1 = randint(0,99)
+            r1 = np.random.randint(0,1000)
             ncomp += 1
             iprec = inext
             inext += 1
         sum_req_time = 0
-        if use_het:
-            #set is_het to the number of components
-            if ncomp > 1:
-                for j in range(i,i+ncomp):
-                    is_het[j] = ncomp
-                    sum_req_time += int(ldata[j][8])
-
+        #keep a parallel array with info about hetjobs,  
+        #set is_het to the number of components for each component
+        if ncomp > 1:
+            for j in range(i,i+ncomp):
+                is_het[j] = ncomp
+                sum_req_time += int(ldata[j][8])
+            if use_het:
                 #set requested time to the total
                 for j in range(i,i+ncomp):
                     ldata[j][8] = str(sum_req_time)
+            #remember first job
             is_first_het[i] = is_het[i]
         i += ncomp
 
 first_het_id = -1
-with open(current_dir+"/cirne_base_"+str(num_jobs)+"_"+arrival_pattern+"_load_"+str(load_cm)+"_"+str(load_esb)+"_"+str(load_dam)+".mwf",'w') as mwffile:
-    for i in range(len(data)):
-        mwf = [""] * 42
-        if is_het[i]:
-            if is_first_het[i]:
-                mwf[0] = ldata[i][0]
-                first_het_id = mwf[0]
+if use_het:
+    tag="het"
+else:
+    tag="dep"
+
+with open(current_dir+"/cirne_base_"+str(num_jobs)+"_"+arrival_pattern+"_load_"+str(load_cm)+"_"+str(load_esb)+"_"+str(load_dam)+"_"+tag+".mwf",'w') as mwffile:
+    with open(current_dir+"/cirne_base_"+str(num_jobs)+"_"+arrival_pattern+"_load_"+str(load_cm)+"_"+str(load_esb)+"_"+str(load_dam)+"_"+tag+"_api.mwf",'w') as mwffileapi:
+        for i in range(len(data)):
+            mwf = [""] * 42
+            if is_het[i] and use_het:
+                if is_first_het[i]:
+                    mwf[0] = ldata[i][0]
+                    first_het_id = mwf[0]
+                else:
+                    mwf[0] = first_het_id
             else:
-                mwf[0] = first_het_id
-        else:
-            mwf[0] = ldata[i][0]
-        if is_het[i] == 0:
-            mwf[1] = "1"
-        else:
-            mwf[1] = str(is_het[i])
-        mwf[2] = "job"+ldata[i][0]
-        mwf[3] = ldata[i][1]
-        mwf[4] = "-1"
-        mwf[5] = ldata[i][8]
-        #number of components submitted at submit time (do we need this?)
-        mwf[6] = "-1"
-        mwf[7] = str(i+1)
-        mwf[8] = "job"+str(i)
-        mwf[9] = "-1"
-        mwf[10] = ldata[i][3]
-        mwf[11] = "0"
-        mwf[12] = "-1"
-        mwf[13] = ldata[i][15]
-        mwf[14] = ldata[i][4]
-        mwf[15] = "1"
-        mwf[16] = "1"
-        mwf[17] = "-1"
-        mwf[18] = "-1"
-        mwf[19] = "-1"
-        #NAM
-        mwf[20] = "-1"
-        mwf[21] = "-1"
-        mwf[22] = "-1"
-        mwf[23] = "-1"
-        mwf[24] = "-1"
-        mwf[25] = "-1"
-        mwf[26] = "-1"
-        mwf[27] = "-1"
-        mwf[28] = "-1"
-        mwf[29] = "-1"
-        mwf[30] = "-1"
-        mwf[31] = "-1"
-        mwf[32] = "-1"
-        mwf[33] = "-1"
-        mwf[34] = "-1"
-        mwf[35] = "-1"
-        mwf[36] = "-1"
-        mwf[37] = "-1"
-        mwf[38] = "-1"
-        mwf[39] = "NA"
-        if is_het[i]:
-            #dependency with prec job
-            if not is_first_het[i]:
-                #precedent job has id == i
-                if not use_het:
-                    mwf[38] = str(i)
-                    mwf[39] = "AFTEROK"
-        if ldata[i][17] is "0":
-            mwf[40] = "-1"
-        else:
-            mwf[40] = ldata[i][17]
-        mwf[41] = ldata[i][19]
-        
+                mwf[0] = ldata[i][0]
+            if is_het[i] == 0:
+                mwf[1] = "1"
+            elif use_het == 1:
+                mwf[1] = str(is_het[i])
+            else:
+                mwf[1] = "1"
+            mwf[2] = "job"+ldata[i][0]
+            mwf[3] = ldata[i][1]
+            mwf[4] = "-1"
+            mwf[5] = ldata[i][8]
+            #number of components submitted at submit time (do we need this?)
+            mwf[6] = "-1"
+            mwf[7] = str(i+1)
+            mwf[8] = "job"+str(i)
+            mwf[9] = "-1"
+            mwf[10] = ldata[i][3]
+            mwf[11] = "0"
+            mwf[12] = "-1"
+            mwf[13] = ldata[i][15]
+            mwf[14] = ldata[i][4]
+            mwf[15] = "1"
+            mwf[16] = "1"
+            mwf[17] = "-1"
+            mwf[18] = "-1"
+            mwf[19] = "-1"
+            #NAM
+            mwf[20] = "-1"
+            mwf[21] = "-1"
+            mwf[22] = "-1"
+            mwf[23] = "-1"
+            mwf[24] = "-1"
+            mwf[25] = "-1"
+            mwf[26] = "-1"
+            mwf[27] = "-1"
+            mwf[28] = "-1"
+            mwf[29] = "-1"
+            mwf[30] = "-1"
+            mwf[31] = "-1"
+            mwf[32] = "-1"
+            mwf[33] = "-1"
+            mwf[34] = "-1"
+            mwf[35] = "-1"
+            mwf[36] = "-1"
+            mwf[37] = "-1"
+            mwf[38] = "-1"
+            mwf[39] = "NA"
+            if is_het[i]:
+                #dependency with prec job
+                if is_first_het[i] == 0:
+                    #precedent job has id == i
+                    if use_het == 0:
+                        mwf[38] = str(i)
+                        mwf[39] = "AFTEROK"
+            if ldata[i][17] == "0":
+                mwf[40] = "-1"
+            else:
+                mwf[40] = ldata[i][17]
+            mwf[41] = ldata[i][19]
+            
+            mwffileapi.write(';'.join(mwf))
+            mwf[41] = "-1\n"
+            mwffile.write(';'.join(mwf))
+
 #Loop between single jobs and assign a dependency with the following job. If a dependency is created the following job arrival time is modified to current job arrival time.
 
 
