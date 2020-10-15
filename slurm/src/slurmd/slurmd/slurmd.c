@@ -2188,7 +2188,9 @@ _slurmd_fini(void)
 	switch_g_node_fini();
 	jobacct_gather_fini();
 	acct_gather_profile_fini();
+#ifndef SLURM_SIMULATOR
 	save_cred_state(conf->vctx);
+#endif
 	switch_fini();
 	slurmd_task_fini();
 	slurm_conf_destroy();

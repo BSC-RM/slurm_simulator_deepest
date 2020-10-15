@@ -799,7 +799,9 @@ int main(int argc, char **argv)
 		pthread_join(slurmctld_config.thread_id_purge_files, NULL);
 		pthread_join(slurmctld_config.thread_id_sig,  NULL);
 		pthread_join(slurmctld_config.thread_id_rpc,  NULL);
+#ifndef SLURM_SIMULATOR
 		pthread_join(slurmctld_config.thread_id_save, NULL);
+#endif
 		slurmctld_config.thread_id_purge_files = (pthread_t) 0;
 		slurmctld_config.thread_id_sig  = (pthread_t) 0;
 		slurmctld_config.thread_id_rpc  = (pthread_t) 0;
