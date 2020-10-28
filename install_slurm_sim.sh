@@ -7,7 +7,7 @@ slurm_source_dir="${work_dir}/slurm"
 cd slurm
 
 echo "Regenerating automake Makefiles in Slurm"
-./autogen.sh > ../autogen.output.txt
+autoreconf -fiv
 
 cd $work_dir
 
