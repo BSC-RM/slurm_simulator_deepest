@@ -247,6 +247,7 @@ extern diag_stats_t slurmctld_diag_stats;
 
 int arrived_jobs_epilogs = 0;
 int total_finished_jobs = 0;
+int total_cycle_jobs_epilogs = 0;
 
 int total_epilog_complete_jobs=0; /* ANA: keeps track how many jobs from total jobs in the log have finished. */
 
@@ -2543,6 +2544,16 @@ static void _slurm_rpc_complete_batch_script(slurm_msg_t *msg,
 	}
 
 	job_ptr = find_job_record(comp_msg->job_id);
+
+#ifdef SLURM_SIMULATOR
+	if (job_ptr->pack_job_id && job_ptr->pack_job_id != NO_VAL) {
+		struct job_record *pack_job_ptr = find_job_record(job_ptr->job_id - job_ptr->pack_job_offset);
+		debug("This is a jobpack, size %d", list_count(pack_job_ptr->pack_job_list));
+		pthread_mutex_lock(&lock_remaining_epilogs);
+		total_cycle_jobs_epilogs += list_count(pack_job_ptr->pack_job_list) -1;
+		pthread_mutex_unlock(&lock_remaining_epilogs);
+	}
+#endif
 
 	if (job_ptr && job_ptr->batch_host && comp_msg->node_name &&
 	    xstrcmp(job_ptr->batch_host, comp_msg->node_name)) {
@@ -7129,11 +7140,13 @@ static void _slurm_rpc_sim_helper_cycle(slurm_msg_t * msg)
 		debug3("Waiting complete jobs to arrive");
 		usleep(100);
 	}
+	total_cycle_jobs_epilogs += helper_msg->total_jobs_ended;
 
 	while (1) {
 		pthread_mutex_lock(&lock_remaining_epilogs);
-		if (arrived_jobs_epilogs == helper_msg->total_jobs_ended) {
+		if (arrived_jobs_epilogs == total_cycle_jobs_epilogs) {
 			arrived_jobs_epilogs = 0;
+			total_cycle_jobs_epilogs = 0;
 			pthread_mutex_unlock(&lock_remaining_epilogs);
 			break;
 		}
