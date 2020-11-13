@@ -56,8 +56,6 @@ char  daemon2[1024];
 char  default_sim_daemons_path[] = "/sbin";
 char* sim_daemons_path = NULL;
 int napps;
-static int CM = 0;
-static int DAM = 0;
 
 sem_t *sim_sem;
 sem_t *slurm_sem;
@@ -116,7 +114,9 @@ char   help_msg[]= "sim_mgr [endtime]\n\t[-c | --compath <cpath>]\n\t[-f | "
 /*  Zia edit begin  */
 void  generateJob(job_trace_t* jobd, List *job_req_list, int modular_jobid, int *duration, int *api_call_time);
 void generate_job_desc_msg(job_desc_msg_t* dmesg, job_trace_t* jobd);
+#ifdef DEBUG
 void  dumping_shared_mem();
+#endif
 void  fork_daemons(int idx);
 char* getPathFromSelf(char*);
 char* getPathFromEnvVar(char*);
@@ -135,7 +135,7 @@ int workflow_count = 0;
  * Pair of job ids corresponding to the id a job had in the trace and the one
  * that was actually raun with.
  */
-typedef struct job_id_pair_t {
+struct job_id_pair_t {
 	uint32_t trace_job_id;
 	uint32_t real_job_id;
 };
@@ -159,7 +159,7 @@ struct job_id_pair_t *create_job_id_pair() {
 /*
  * _free_job_id_pair deallocates memory.
  */
-void _free_job_id_pair(struct job_id_pair_t *pair_ptr) {
+void _free_job_id_pair(void *pair_ptr) {
 	xfree(pair_ptr);
 }
 
@@ -188,7 +188,7 @@ void _add_job_pair(uint32_t trace_job_id, uint32_t real_job_id) {
  * id trace_job_id. If id not found, returns NO_VAL.
  */
 uint32_t _get_real_job_id(uint32_t trace_job_id) {
-	ListIterator *iter = list_iterator_create(job_id_list);
+	ListIterator iter = list_iterator_create(job_id_list);
 	struct job_id_pair_t *pair_ptr;
 	uint32_t real_job_id=NO_VAL;
 	while((pair_ptr=list_next(iter))) {
@@ -300,11 +300,11 @@ change_debug_level(int signum) {
 void
 terminate_simulation(int signum) {
 
-	int i;
 	char sim_sem_name[100], slurm_sem_name[100];
 	get_semaphores_names(sim_sem_name, slurm_sem_name);
+#ifdef DEBUG
 	dumping_shared_mem();
-
+#endif
 	sem_close(sim_sem);
 	sem_unlink(sim_sem_name);
 	sem_close(slurm_sem);
@@ -320,18 +320,14 @@ terminate_simulation(int signum) {
 }
 
 /* Debugging */
-void
-dumping_shared_mem() {
-	struct timeval t1;
-
-	printf("Let's dump the shared memory contents\n");
 #ifdef DEBUG
+void dumping_shared_mem() {
+	printf("Let's dump the shared memory contents\n");
+	struct timeval t1;
 	gettimeofday(&t1, NULL);
 	printf("SIM_MGR[%u][%ld][%ld]\n", current_sim[0], t1.tv_sec, t1.tv_usec);
-#endif
-	return;
 }
-
+#endif
 /* This is the main simulator function */
 static void*
 time_mgr(void *arg) {
@@ -339,10 +335,8 @@ time_mgr(void *arg) {
 	job_desc_msg_t *dmesg;
 	List job_req_list = NULL;
 	int child;
-	long int wait_time;
-	struct timeval t1 /*, t2*/;
 	struct timeval t_start, t_end, i_loop;
-	int i, j, total_comp = 0, modular_jobid = 0;
+	int total_comp = 0, modular_jobid = 0;
 	int * duration = NULL;
 	/*  Zia edit begin  */
 	int *api_call_time = NULL;
@@ -373,6 +367,7 @@ time_mgr(void *arg) {
 	info("Done waiting.\n");
 
 #ifdef DEBUG
+	struct timeval t1;
 	gettimeofday(&t1, NULL);
 	info("SIM_MGR[%u][%ld][%ld]\n", current_sim[0], t1.tv_sec, t1.tv_usec);
 #endif
@@ -384,7 +379,8 @@ time_mgr(void *arg) {
 	while (1) {
 		real_gettimeofday(&t_start, NULL);
 		/* Do we have to end simulation in this cycle? */
-		if (!time_end && (sim_end_point && sim_end_point <= current_sim[0] || *trace_recs_end_sim==-1)) { /* ANA: added condition for terminating sim using shmem var trace_recs_end_sim when all jobs have finished */
+		if ((!time_end && (sim_end_point && sim_end_point <= current_sim[0])) 
+			|| *trace_recs_end_sim==-1) { /* ANA: added condition for terminating sim using shmem var trace_recs_end_sim when all jobs have finished */
 			fprintf(stderr, "End point of trace arrived, keep simulation for %d"
 					" seconds for last jobs to be registered\n",
 					seconds_to_finish);
@@ -448,9 +444,9 @@ time_mgr(void *arg) {
 		/* Now checking if a new job needs to be submitted */
 		while(trace_head) {
 
-			int hour,min,sec;
-			int exec_result;
-			static int failed_submissions = 0;
+			//int hour,min,sec;
+			//int exec_result;
+			//static int failed_submissions = 0;
 
 			/*
 			 * Uhmm... This is necessary if a large number of jobs
@@ -550,11 +546,11 @@ time_mgr(void *arg) {
 		*(current_sim) = *(current_sim) + time_incr;
 
 		timersub(&t_end, &t_start, &i_loop);
-		float speed_up;
-		speed_up = ((float)(time_incr)*1000000.0) /
-				   ((float)(i_loop.tv_sec*1000000+i_loop.tv_usec));
-		float loop_time=(float)(i_loop.tv_sec*1000000+i_loop.tv_usec) /
-				1000000.0;
+		//float speed_up;
+		//speed_up = ((float)(time_incr)*1000000.0) /
+		//		   ((float)(i_loop.tv_sec*1000000+i_loop.tv_usec));
+		//float loop_time=(float)(i_loop.tv_sec*1000000+i_loop.tv_usec) /
+		//		1000000.0;
 		//printf("sim_mgr loop iteration time %lu, SU: %f, sim_inc: %d, sim_time: %d\n",
 		//		i_loop.tv_usec, speed_up, time_incr, *(current_sim));
 #ifdef DEBUG
@@ -812,7 +808,7 @@ generateJob(job_trace_t* jobd, List *job_req_list, int modular_jobid, int * dura
 	job_desc_msg_t dmesg;
         job_desc_msg_t dmesg1 /*,dmesg2*/; // SHould it be declared somewhere else?
 	submit_response_msg_t respMsg, *rptr = &respMsg, respMsg1, *rptr1 = &respMsg1 /*, respMsg2, *rptr2 = &respMsg2*/;
-	int rv, ix, jx;
+	//int rv, ix, jx;
 
 #if 0
 	displayJobTraceT(jobd);
@@ -820,7 +816,6 @@ generateJob(job_trace_t* jobd, List *job_req_list, int modular_jobid, int * dura
 	sim_job_msg_t req, req1 /*, req2*/;
 	slurm_msg_t   req_msg, req_msg1 /*, req_msg2*/;
 	slurm_msg_t   resp_msg, resp_msg1 /*, resp_msg2*/;
-	slurm_addr_t  remote_addr;
 	char* this_addr;
 	uint32_t trace_job_id,trace_job_id1 /*,trace_job_id2*/;
 
@@ -832,154 +827,154 @@ generateJob(job_trace_t* jobd, List *job_req_list, int modular_jobid, int * dura
 		slurm_init_job_desc_msg(&dmesg);
 		generate_job_desc_msg(&dmesg, jobd);
 
-                // In case the user provides preferred and alternative modules - MODULE LIST implementation
-                // ONE PREFERRED + TWO ALTERNATIVE MODUELS always assumed. TODO This should be made more generic.
-                // What if job pack, or a component of a job pack has module list option? TODO This should be moved to a separate function.
-                if(strcmp(jobd->module_list,"")){          // In case the input is a trace without module list field this will not work? Check if jobd->module_list exists?
-                          //job_desc_msg_t dmesg1, dmesg2; 
-			  slurm_init_job_desc_msg(&dmesg1);
-                          //slurm_init_job_desc_msg(&dmesg2);
+		// In case the user provides preferred and alternative modules - MODULE LIST implementation
+		// ONE PREFERRED + TWO ALTERNATIVE MODUELS always assumed. TODO This should be made more generic.
+		// What if job pack, or a component of a job pack has module list option? TODO This should be moved to a separate function.
+		if(strcmp(jobd->module_list,"")){          // In case the input is a trace without module list field this will not work? Check if jobd->module_list exists?
+			//job_desc_msg_t dmesg1, dmesg2; 
+			slurm_init_job_desc_msg(&dmesg1);
+			//slurm_init_job_desc_msg(&dmesg2);
 
-			  strcpy(jobd->dependency,"plussingleton");
-                          dmesg.dependency    = re_write_dependencies(jobd);
+			strcpy(jobd->dependency,"plussingleton");
+			dmesg.dependency    = re_write_dependencies(jobd);
 
-                	  generate_job_desc_msg(&dmesg1, jobd);
-                	  //generate_job_desc_msg(&dmesg2, jobd);
+			generate_job_desc_msg(&dmesg1, jobd);
+			//generate_job_desc_msg(&dmesg2, jobd);
 
-                          char *token, *tmp_list;
-            		  char **module=(char**)malloc(2*sizeof(char*));
-            		  for(int i = 0; i < 2; i++){
-                	  	module[i] = (char*)malloc(10*sizeof(char));// name of each module max. 10 characters
-            		  }
-              		  tmp_list = xstrdup(jobd->module_list);
-            		  //info("Module list parsing module list: %s\n", tmp_list);
-            		  int j=0;
-            		  token = strtok(tmp_list, ",");
-            		  while (token != 0) {
-                		strcpy(module[j],token);
-                		//info("Module list parsing, %d: %s\n", j, token);
-                    		token=strtok(0,",0");
-                    		j++;
-            		  }
+			char *token, *tmp_list;
+			char **module=(char**)malloc(2*sizeof(char*));
+			for(int i = 0; i < 2; i++){
+				module[i] = (char*)malloc(10*sizeof(char));// name of each module max. 10 characters
+			}
+			tmp_list = xstrdup(jobd->module_list);
+			//info("Module list parsing module list: %s\n", tmp_list);
+			int j=0;
+			token = strtok(tmp_list, ",");
+			while (token != 0) {
+				strcpy(module[j],token);
+				//info("Module list parsing, %d: %s\n", j, token);
+				token=strtok(0,",0");
+				j++;
+			}
 
-            		  int l=strlen(module[1]);
-            		  module[1][l]='\0';
+			int l=strlen(module[1]);
+			module[1][l]='\0';
 
-                          dmesg.partition = strdup(module[0]); // PREFERRED
-                          dmesg1.partition = strdup(module[1]);// 1ST ALTERNATIVE
-                          //dmesg2.partition = strdup(module[2]);// 2ND ALTERNATIVE
+			dmesg.partition = strdup(module[0]); // PREFERRED
+			dmesg1.partition = strdup(module[1]);// 1ST ALTERNATIVE
+			//dmesg2.partition = strdup(module[2]);// 2ND ALTERNATIVE
 
-                          for(int i = 0; i < 2; i++){
-                         	free(module[i]);
-                     	  }
-                     	  free(module);
+			for(int i = 0; i < 2; i++){
+				free(module[i]);
+			}
+			free(module);
 
-                          // Use the original job_id (from the trace) as jobname for all the jobs in the dependency group  
-                          char r_str[7]="";
-                          sprintf(r_str, "%d", jobd->job_id);
-                          dmesg.name = strdup(r_str);
-                          dmesg1.name = strdup(r_str);
+			// Use the original job_id (from the trace) as jobname for all the jobs in the dependency group  
+			char r_str[7]="";
+			sprintf(r_str, "%d", jobd->job_id);
+			dmesg.name = strdup(r_str);
+			dmesg1.name = strdup(r_str);
 
-                          intermodule_time_res_convertor(&dmesg,&dmesg1,jobd); // TODO Simple model implemented. Implement model based on WP1 inputs.
+			intermodule_time_res_convertor(&dmesg,&dmesg1,jobd); // TODO Simple model implemented. Implement model based on WP1 inputs.
+		}
+		//info("Submit the first job on module %s, num_tasks: %u,  min_nodes: %u, ntasks_per_node %u, cpus_per_task %u  ", dmesg.partition, dmesg.num_tasks, dmesg.min_nodes, dmesg.ntasks_per_node, dmesg.cpus_per_task);
+		if ( slurm_submit_batch_job(&dmesg, &rptr) ) {
+			printf("Function: %s, Line: %d\n", __FUNCTION__, __LINE__);
+			slurm_perror ("slurm_submit_batch_job");
+		}
 
-                     }
-                     //info("Submit the first job on module %s, num_tasks: %u,  min_nodes: %u, ntasks_per_node %u, cpus_per_task %u  ", dmesg.partition, dmesg.num_tasks, dmesg.min_nodes, dmesg.ntasks_per_node, dmesg.cpus_per_task);
-                     if ( slurm_submit_batch_job(&dmesg, &rptr) ) {
-                           printf("Function: %s, Line: %d\n", __FUNCTION__, __LINE__);
-                           slurm_perror ("slurm_submit_batch_job");
-                     }
+		_add_job_pair(trace_job_id, rptr->job_id);
 
-                     _add_job_pair(trace_job_id, rptr->job_id);
+		printf("Response from job submission\n\terror_code: %u\n\t"
+				 "job_id: %u\n",
+				 rptr->error_code, rptr->job_id);
+		/* steps not simulated for now */
+				//"job_id: %u\n\tstep_id: %u\n",
+				//rptr->error_code, rptr->job_id, rptr->step_id);
+		printf("\n");
 
-                     printf("\nResponse from job submission\n\terror_code: %u\n\t"
-                        "job_id: %u\n\tstep_id: %u\n",
-                        rptr->error_code, rptr->job_id, rptr->step_id);
-                     printf("\n");
-
-                /*
-                * Second, send special Simulator message to the slurmd to inform it
-                * when the given job should terminate. job_id is obtained from whatever
-                * slurmctld returned.
-                */
-                    slurm_msg_t_init(&req_msg);
-                    slurm_msg_t_init(&resp_msg);
-                    req.job_id       = rptr->job_id;
-                    req.duration     = jobd->duration;
+		/*
+		* Second, send special Simulator message to the slurmd to inform it
+		* when the given job should terminate. job_id is obtained from whatever
+		* slurmctld returned.
+		*/
+		slurm_msg_t_init(&req_msg);
+		slurm_msg_t_init(&resp_msg);
+		req.job_id       = rptr->job_id;
+		req.duration     = jobd->duration;
 /*  Zia edit begin  */
-                    req.api_call_time = jobd->api_call_time;
-                    req.is_delayed_workflow = false;
+		req.api_call_time = jobd->api_call_time;
+		req.is_delayed_workflow = false;
 /*  Zia edit end  */
-                    req_msg.msg_type = REQUEST_SIM_JOB;
-                    req_msg.data     = &req;
-                    req_msg.protocol_version = SLURM_PROTOCOL_VERSION;
-                    this_addr = "localhost";
-                    slurm_set_addr(&req_msg.address, (uint16_t)slurm_get_slurmd_port(),
-                                                        this_addr);
-                    if (!jobd->manifest || 1) {
-                        if (slurm_send_recv_node_msg(&req_msg, &resp_msg, 500000) < 0) {
-                                printf("check_events_trace: error in slurm_send_recv_node_msg\n");
-                        }
-                    }
-                    if(strcmp(jobd->module_list,"")){
-
-                          if(dmesg1.max_nodes != -1 && dmesg1.ntasks_per_node != -1){
-                                   //info("Submit the second job on module %s, num_tasks: %u,  min_nodes: %u, ntasks_per_node %u, cpus_per_task %u  ", dmesg1.partition, dmesg1.num_tasks, dmesg1.min_nodes, dmesg1.ntasks_per_node, dmesg1.cpus_per_task);
-	     		           if ( slurm_submit_batch_job(&dmesg1, &rptr1) ) {
-                			printf("Function: %s, Line: %d\n", __FUNCTION__, __LINE__);
-                			slurm_perror ("slurm_submit_batch_job");
-           			   }
-                                   _add_job_pair(trace_job_id1, rptr1->job_id);
-           			   printf("\nResponse from job submission\n\terror_code: %u\n\t" 
+		req_msg.msg_type = REQUEST_SIM_JOB;
+		req_msg.data     = &req;
+		req_msg.protocol_version = SLURM_PROTOCOL_VERSION;
+		this_addr = "localhost";
+		slurm_set_addr(&req_msg.address, (uint16_t)slurm_get_slurmd_port(),
+						this_addr);
+		if (!jobd->manifest || 1) {
+			if (slurm_send_recv_node_msg(&req_msg, &resp_msg, 500000) < 0) {
+				printf("check_events_trace: error in slurm_send_recv_node_msg\n");
+			}
+		}
+		if(strcmp(jobd->module_list,"")){
+			if(dmesg1.max_nodes != -1 && dmesg1.ntasks_per_node != -1){
+			//info("Submit the second job on module %s, num_tasks: %u,  min_nodes: %u, ntasks_per_node %u, cpus_per_task %u  ", dmesg1.partition, dmesg1.num_tasks, dmesg1.min_nodes, dmesg1.ntasks_per_node, dmesg1.cpus_per_task);
+				if ( slurm_submit_batch_job(&dmesg1, &rptr1) ) {
+					printf("Function: %s, Line: %d\n", __FUNCTION__, __LINE__);
+					slurm_perror ("slurm_submit_batch_job");
+			}
+			_add_job_pair(trace_job_id1, rptr1->job_id);
+			printf("Response from job submission\n\terror_code: %u\n\t" 
 					"job_id: %u\n\tstep_id: %u\n",
-                			rptr1->error_code, rptr1->job_id, rptr1->step_id);
-           			   printf("\n");
-         		  }
-         		  /*if(dmesg2.max_nodes != -1 && dmesg2.ntasks_per_node != -1){
-                                   //info("Submit the third job on module %s, num_tasks: %u,  min_nodes: %u, ntasks_per_node %u, cpus_per_task %u  ", dmesg2.partition, dmesg2.num_tasks, dmesg2.min_nodes, dmesg2.ntasks_per_node, dmesg2.cpus_per_task);
-           			   if ( slurm_submit_batch_job(&dmesg2, &rptr2) ) {
-                			printf("Function: %s, Line: %d\n", __FUNCTION__, __LINE__);
-                			slurm_perror ("slurm_submit_batch_job");
-           		  	   }
-                                   _add_job_pair(trace_job_id2, rptr2->job_id);
-           		 	   printf("\nResponse from job submission\n\terror_code: %u\n\t"
-               			   "job_id: %u\n\tstep_id: %u\n",
-                		   rptr2->error_code, rptr2->job_id, rptr2->step_id);
-           			   printf("\n");
-         		  }*/
-                         // TODO check first if rptr1->error_code and rptr2->error_code have valid values, since the alternative jobs might not have been submitted.
-                         slurm_msg_t_init(&req_msg1);
-	                 //slurm_msg_t_init(&req_msg2);
-           		 slurm_msg_t_init(&resp_msg1);
-           		 //slurm_msg_t_init(&resp_msg2);
-            		 req1.job_id       = rptr1->job_id;
-           		 //req2.job_id       = rptr2->job_id;
-           		 req1.duration     = (int)((dmesg1.time_limit*jobd->duration)/dmesg.time_limit);
-
+					rptr1->error_code, rptr1->job_id, rptr1->step_id);
+			printf("\n");
+			}
+			/*if(dmesg2.max_nodes != -1 && dmesg2.ntasks_per_node != -1){
+			//info("Submit the third job on module %s, num_tasks: %u,  min_nodes: %u, ntasks_per_node %u, cpus_per_task %u  ", dmesg2.partition, dmesg2.num_tasks, dmesg2.min_nodes, dmesg2.ntasks_per_node, dmesg2.cpus_per_task);
+			if ( slurm_submit_batch_job(&dmesg2, &rptr2) ) {
+				printf("Function: %s, Line: %d\n", __FUNCTION__, __LINE__);
+				slurm_perror ("slurm_submit_batch_job");
+			}
+			_add_job_pair(trace_job_id2, rptr2->job_id);
+			printf("\nResponse from job submission\n\terror_code: %u\n\t"
+					"job_id: %u\n\tstep_id: %u\n",
+					rptr2->error_code, rptr2->job_id, rptr2->step_id);
+			printf("\n");
+			}*/
+			// TODO check first if rptr1->error_code and rptr2->error_code have valid values, since the alternative jobs might not have been submitted.
+			slurm_msg_t_init(&req_msg1);
+			//slurm_msg_t_init(&req_msg2);
+			slurm_msg_t_init(&resp_msg1);
+			//slurm_msg_t_init(&resp_msg2);
+			req1.job_id       = rptr1->job_id;
+			//req2.job_id       = rptr2->job_id;
+			req1.duration     = (int)((dmesg1.time_limit*jobd->duration)/dmesg.time_limit);
 /*  Zia edit begin  */
-                 req1.api_call_time = jobd->api_call_time;
-                 req1.is_delayed_workflow = false;
+			req1.api_call_time = jobd->api_call_time;
+			req1.is_delayed_workflow = false;
 /*  Zia edit end  */
-//req2.duration     = (int)((dmesg2.time_limit*jobd->duration)/dmesg.time_limit);
-           		 req_msg1.msg_type = REQUEST_SIM_JOB;
-           		 //req_msg2.msg_type = REQUEST_SIM_JOB;
-           		 req_msg1.data     = &req1;
-           		 //req_msg2.data     = &req2;
-           		 req_msg1.protocol_version = SLURM_PROTOCOL_VERSION;
-           		 //req_msg2.protocol_version = SLURM_PROTOCOL_VERSION;
-           		 slurm_set_addr(&req_msg1.address, (uint16_t)slurm_get_slurmd_port(),
-                                                this_addr);
-           		 //slurm_set_addr(&req_msg2.address, (uint16_t)slurm_get_slurmd_port(),
-                          //                      this_addr);
+			//req2.duration     = (int)((dmesg2.time_limit*jobd->duration)/dmesg.time_limit);
+			req_msg1.msg_type = REQUEST_SIM_JOB;
+			//req_msg2.msg_type = REQUEST_SIM_JOB;
+			req_msg1.data     = &req1;
+			//req_msg2.data     = &req2;
+			req_msg1.protocol_version = SLURM_PROTOCOL_VERSION;
+			//req_msg2.protocol_version = SLURM_PROTOCOL_VERSION;
+			slurm_set_addr(&req_msg1.address, (uint16_t)slurm_get_slurmd_port(),
+                                this_addr);
+			//slurm_set_addr(&req_msg2.address, (uint16_t)slurm_get_slurmd_port(),
+			//					this_addr);
 
-           		 if (!jobd->manifest || 1) {
-                  	 	if (slurm_send_recv_node_msg(&req_msg1, &resp_msg1, 500000) < 0) {
-                        		printf("check_events_trace: error in slurm_send_recv_node_msg\n");
-                		}
-                		//if (slurm_send_recv_node_msg(&req_msg2, &resp_msg2, 500000) < 0) {
-                        	//	printf("check_events_trace: error in slurm_send_recv_node_msg\n");
-                		//}
-          		}
-                    }
+			if (!jobd->manifest || 1) {
+				if (slurm_send_recv_node_msg(&req_msg1, &resp_msg1, 500000) < 0) {
+					printf("check_events_trace: error in slurm_send_recv_node_msg\n");
+				}
+				//if (slurm_send_recv_node_msg(&req_msg2, &resp_msg2, 500000) < 0) {
+				//	printf("check_events_trace: error in slurm_send_recv_node_msg\n");
+				//}
+			}
+		}
 		//slurm_free_submit_response_response_msg(&req_msg);
 		//slurm_free_submit_response_response_msg(&req_msg1);
 		//slurm_free_submit_response_response_msg(&req_msg2);
@@ -995,9 +990,11 @@ generateJob(job_trace_t* jobd, List *job_req_list, int modular_jobid, int * dura
 			slurm_perror ("slurm_submit_batch_pack_job");
 		}
 
-		printf("\nResponse from job submission\n\terror_code: %u\n\t"
-			   "job_id: %u\n\tstep_id: %u\n",
-			   rptr->error_code, rptr->job_id, rptr->step_id);
+		printf("Response from job pack submission\n\terror_code: %u\n\t"
+				"job_id: %u\n",
+				rptr->error_code, rptr->job_id);
+				//"job_id: %u\n\tstep_id: %u\n",
+				//rptr->error_code, rptr->job_id, rptr->step_id);
 		printf("\n");
 
 		/*
@@ -1037,8 +1034,8 @@ uid_t
 userIdFromName(const char *name, gid_t* gid) {
 	struct passwd the_pwd;
 	struct passwd *pwd=&the_pwd, *pwd_ptr;
-	uid_t u;
-	char *endptr;
+	//uid_t u;
+	//char *endptr;
 
 	*gid = -1;			    /* In case of error, a -1     */
 					    /* would be returned.         */
@@ -1179,7 +1176,7 @@ void displayJobTraceT(job_trace_t* rptr) {
 			SAFE_PRINT(rptr->dependency),
 			SAFE_PRINT(rptr->rreq_constraint),
 			SAFE_PRINT(rptr->rreq_hint),
-			SAFE_PRINT(rptr->ralloc_avg_power)
+			rptr->ralloc_avg_power
 		);
 	else 
 		printf(
@@ -1222,7 +1219,7 @@ int init_job_trace() {
 	int total_trace_records = 0;
 	FILE * trace_file_ptr = NULL;
 
-        trace_recs_end_sim = timemgr_data + SIM_TRACE_RECS_END_SIM_OFFSET; /*ANA: Shared memory variable that will keep value of the total number of jobs in the log; once they are all finished controller will set it to -1 */
+	trace_recs_end_sim = timemgr_data + SIM_TRACE_RECS_END_SIM_OFFSET; /*ANA: Shared memory variable that will keep value of the total number of jobs in the log; once they are all finished controller will set it to -1 */
 
 	if (trace_format > 2)
 		printf("%8s %9s %11s %9s %9s %7s %11s %11s %11s %14s %16s %11s %11s %6s %6s\n",
@@ -1267,14 +1264,14 @@ int init_job_trace() {
 			printf("Error opening manifest\n");
 			return -1;
 		}
+		close(trace_file);
 	}
 
 	printf("Trace initialization done. Total trace records: %d\n",
-					total_trace_records);
-        *trace_recs_end_sim=total_trace_records; /* ANA: update shared memory variable to total jobs in the log */ 
-        printf("Trace initialization done. Total log jobs: %d\n",
-                                        *trace_recs_end_sim);
-	close(trace_file);
+				total_trace_records);
+	*trace_recs_end_sim=total_trace_records; /* ANA: update shared memory variable to total jobs in the log */ 
+	printf("Trace initialization done. Total log jobs: %d\n",
+				*trace_recs_end_sim);
 
 	return 0;
 }
@@ -1397,7 +1394,6 @@ main(int argc, char *argv[], char *envp[]) {
 	char thelib[1024];
 	struct stat buf;
 	int ix, envcount = countEnvVars(envp);
-	int trace_format = 0;
 
 	_create_job_id_list();
 	if ( !getArgs(argc, argv) ) {
@@ -1459,21 +1455,21 @@ main(int argc, char *argv[], char *envp[]) {
 	};
 	/*ANA: Replacing signals with shared vars for slurmd registration ***/
 	if (open_slurmd_ready_semaphore() < 0) {
-                error("Error opening the Simulator Slurmd-ready semaphore.");
-                return -1;
-        };
+		error("Error opening the Simulator Slurmd-ready semaphore.");
+		return -1;
+	};
 
-        if(init_job_trace() < 0){
-                printf("An error was detected when reading trace file. "
-                       "Exiting...\n");
-                return -1;
-        }
+	if(init_job_trace() < 0){
+		printf("An error was detected when reading trace file. "
+				"Exiting...\n");
+		return -1;
+	}
 
 	if(init_rsv_trace() < 0){
-                printf("An error was detected when reading trace file. \n"
-                       /*"Exiting...\n"*/);
-                /*return -1;*/
-        }
+		printf("No reservation trace file.\n"
+				/*"Exiting...\n"*/);
+			/*return -1;*/
+	}
 
 	//read apps info - TODO: move this path to slurm.conf and sim.conf
 	char *apps_file = getenv("LIBEN_APPS");
@@ -1507,7 +1503,7 @@ main(int argc, char *argv[], char *envp[]) {
 
 	if(init_rsv_trace() < 0){
 		printf("An error was detected when reading trace file. \n"
-		       /*"Exiting...\n"*/);
+				/*"Exiting...\n"*/);
 		/*return -1;*/
 	}
 

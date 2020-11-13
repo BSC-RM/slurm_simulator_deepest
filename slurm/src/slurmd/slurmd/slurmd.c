@@ -676,12 +676,57 @@ _send_sim_helper_cycle_msg(uint32_t jobs_count)
                return SLURM_ERROR;
        }
 
-       if ((rc == ESLURM_ALREADY_DONE) || (rc == ESLURM_INVALID_JOB_ID))
-               rc = SLURM_SUCCESS;
        if (rc)
                slurm_seterrno_ret(rc);
 
-       return SLURM_SUCCESS;
+       return rc;
+}
+
+int _send_simulated_step_complete_msg(int event_jid, int err)
+{
+	step_complete_msg_t msg;
+	slurm_msg_t     req;
+	int rc = -1;
+	int i;
+
+	memset(&msg, 0, sizeof(msg));
+	msg.job_id = event_jid;
+	msg.job_step_id = 0;
+	msg.range_first  = 0;
+	msg.range_last   = 0;
+	msg.step_rc      = err;
+	msg.jobacct      = jobacctinfo_create(NULL);
+
+	slurm_msg_t_init(&req);
+	req.msg_type = REQUEST_STEP_COMPLETE;
+	req.data = &msg;
+
+	info("SIM: sending REQUEST_STEP_COMPLETE");
+
+	/* Note: these log messages don't go to slurmd.log from here */
+	for (i=0; i<=5; i++) {
+		struct timespec waiting;
+
+		if (slurm_send_recv_controller_rc_msg(&req, &rc, working_cluster_rec) == 0)
+			break;
+		info("SIM: Retrying step complete RPC");
+		waiting.tv_sec = 0;
+		waiting.tv_nsec = 10000000;
+		//usleep(10000);
+		nanosleep(&waiting, 0);
+	}
+	if (i > 5) {
+		sleep(10);
+		error("SIM: Unable to send message helper cycle complete message: %m");
+		return SLURM_ERROR;
+	}
+	debug("Returned rc = %d", rc);
+	if ((rc == ESLURM_ALREADY_DONE) || (rc == ESLURM_INVALID_JOB_ID))
+        rc = SLURM_SUCCESS;
+	if (rc)
+        slurm_seterrno_ret(rc);
+
+	return rc;
 }
 
 void *
@@ -708,43 +753,55 @@ _simulator_helper(void *arg)
 
 		while((head_simulator_event) && (now >= head_simulator_event->when)){
 			volatile simulator_event_t *aux;
-			int event_jid;
+			int event_jid, event_uid, event_type, ncomponents;
+
 			event_jid = head_simulator_event->job_id;
-
-			/* Manage WF API behavior */
-			if (head_simulator_event->type == WF_API) {
-				debug("WF_API: calling slurm_wf_move_all_res");
-				if(slurm_wf_move_all_res(2, event_jid))
-					debug("WF_API: Error moving reservarions");
-			}
-			else if (head_simulator_event->type == AFTEROK_API) {
-				char jid_str[1024];
-				sprintf(jid_str, "%u", event_jid);
-				debug("AFTEROK_API: calling slurm_change_dep");
-				if (slurm_change_dep(jid_str, head_simulator_event->uid))
-					debug("AFTEROK_API: Error in changing dependency");
-			}
-			//ending job
-			else {
-			    info("SIM: Sending JOB_COMPLETE_BATCH_SCRIPT for job %d", event_jid);
-			    if(_send_complete_batch_script_msg(event_jid, SLURM_SUCCESS, 0) == SLURM_SUCCESS) {
-				pthread_mutex_lock(&epilogs_mutex); //we are in the same thread here
-				waiting_epilog_msgs++;
-				pthread_mutex_unlock(&epilogs_mutex);
-				info("SIM: JOB_COMPLETE_BATCH_SCRIPT for job %d SENT", event_jid);
-				jobs_ended++;
-			    } else {
-				error("SIM: JOB_COMPLETE_BATCH_SCRIPT for job %d NOT SENT", event_jid);
-				_decrement_thd_count();
-				return NULL;
-			    }
-			}
-
+			event_uid = head_simulator_event->uid;
+			event_type = head_simulator_event->type;
+			ncomponents = head_simulator_event->pack_components;
 			aux = head_simulator_event;
 			head_simulator_event = head_simulator_event->next;
 			aux->next = head_sim_completed_jobs;
 			head_sim_completed_jobs = aux;
 			total_sim_events--;
+
+			/* Manage WF API behavior */
+			if (event_type == WF_API) {
+			debug("WF_API: calling slurm_wf_move_all_res");
+				if(slurm_wf_move_all_res(2, event_jid))
+					debug("WF_API: Error moving reservarions");
+			}
+			else if (event_type == AFTEROK_API) {
+				char jid_str[1024];
+				sprintf(jid_str, "%u", event_jid);
+				debug("AFTEROK_API: calling slurm_change_dep");
+				if (slurm_change_dep(jid_str, event_uid))
+					debug("AFTEROK_API: Error in changing dependency");
+			}
+//			else if (event_type == REQUEST_STEP_COMPLETE) {
+//				info("SIM: Sending REQUEST_STEP_COMPLETE for job %d", event_jid);
+//				if (_send_simulated_step_complete_msg(event_jid, SLURM_SUCCESS) != SLURM_ERROR) {
+//					error("SIM: Error sending REQUEST_STEP_COMPLETE");
+//				}
+//			}
+//			else
+			if (event_type == REQUEST_COMPLETE_BATCH_SCRIPT) {
+				info("SIM: Sending REQUEST_COMPLETE_BATCH_SCRIPT for job %d", event_jid);
+				if (_send_complete_batch_script_msg(event_jid, SLURM_SUCCESS, 0) == SLURM_SUCCESS) { 
+					debug("sent");
+					pthread_mutex_lock(&epilogs_mutex); //we are in the same thread here
+					waiting_epilog_msgs += ncomponents;
+					debug("Now waiting for %d epilogs", waiting_epilog_msgs);
+					pthread_mutex_unlock(&epilogs_mutex);
+					info("SIM: REQUEST_COMPLETE_BATCH_SCRIPT for job %d SENT", event_jid);
+					jobs_ended++;
+				} else {
+					error("SIM: REQUEST_COMPLETE_BATCH_SCRIPT for job %d NOT SENT", event_jid);
+					_decrement_thd_count();
+					return NULL;
+				}
+			}
+			else debug("SIM: error: message type not recognized");
 		}
 		pthread_mutex_unlock(&simulator_mutex);
 		last = now;

@@ -190,10 +190,8 @@ static void _rpc_timelimit(slurm_msg_t *);
 static void _rpc_reattach_tasks(slurm_msg_t *);
 static void _rpc_suspend_job(slurm_msg_t *msg);
 static void _rpc_terminate_job(slurm_msg_t *);
-static void _rpc_simulator_terminate_job(slurm_msg_t *);
 static int _rpc_sim_job(slurm_msg_t *msg);
 static void _rpc_update_time(slurm_msg_t *);
-static void _rpc_simulator_batch_job(slurm_msg_t *);
 static void _rpc_shutdown(slurm_msg_t *msg);
 static void _rpc_reconfig(slurm_msg_t *msg);
 static void _rpc_reboot(slurm_msg_t *msg);
@@ -264,6 +262,8 @@ static List job_limits_list = NULL;
 static bool job_limits_loaded = false;
 
 static int next_fini_job_inx = 0;
+
+static pthread_mutex_t event_info_list_mutex = PTHREAD_MUTEX_INITIALIZER;
 extern pthread_mutex_t simulator_mutex;
 
 /* NUM_PARALLEL_SUSP_JOBS controls the number of jobs that can be suspended or
@@ -520,101 +520,130 @@ int simulator_add_future_event(batch_job_launch_msg_t *req){
 
 	pthread_mutex_lock(&simulator_mutex);
 	now = time(NULL);
+	int comp;
+	int ncomp = req->pack_components == 0 ? 1 : req->pack_components;
 
-	new_event = (simulator_event_t *)malloc(sizeof(simulator_event_t));
-	if(!new_event){
-		error("SIMULATOR: malloc fails for new_event\n");
-		pthread_mutex_unlock(&simulator_mutex);
-		return -1;
-	}
-
+	debug3("Received job with %d components", req->pack_components);
+	
 	/* Checking job_id as expected */
-	while(temp_ptr){
-		if(temp_ptr->job_id == req->job_id)
+	while (temp_ptr){
+		if (temp_ptr->job_id == req->job_id)
 			break;
 		temp_ptr = temp_ptr->next;
 	}
-	if(!temp_ptr){
+	if (!temp_ptr){
 		info("SIM: No job_id event matching this job_id %d\n", req->job_id);
 		pthread_mutex_unlock(&simulator_mutex);
 		return -1;
 	}
-	new_event->job_id = req->job_id;
-	new_event->uid = req->uid;
-	new_event->type = REQUEST_COMPLETE_BATCH_SCRIPT;
-	new_event->when = now + temp_ptr->duration;
-	new_event->nodelist = strdup(req->nodes);
-	new_event->next = NULL;
-
-	total_sim_events++;
-	if(!head_simulator_event){
-		info("SIM: Adding new event for job %d when list is empty for future time %ld!", new_event->job_id, new_event->when);
-		head_simulator_event = new_event;
-	}else{
-		volatile simulator_event_t *node_temp = head_simulator_event;
-		info("SIM: Adding new event for job %d in the event list for future time %ld", new_event->job_id, new_event->when);
-
-		if(head_simulator_event->when > new_event->when){
-			new_event->next = head_simulator_event;
-			head_simulator_event = new_event;
-			pthread_mutex_unlock(&simulator_mutex);
-			goto api_call_check;
+	int max_duration = 0;
+	simulator_event_info_t *temp_ptr2 = temp_ptr;
+	for (comp = 0; comp < ncomp; comp++) {
+		if (!temp_ptr2 && ncomp > 1) {
+			info("SIM: wrong number of jobs components");
+			return -1;
 		}
-
-		while((node_temp->next) && (node_temp->next->when < new_event->when))
-			node_temp = node_temp->next;
-
-		if(node_temp->next){
-			new_event->next = node_temp->next;
-			node_temp->next = new_event;
-			pthread_mutex_unlock(&simulator_mutex);
-			goto api_call_check;
-		}
-		node_temp->next = new_event;
+		if (temp_ptr2->job_id != (temp_ptr->job_id+comp))
+			error("Wrong job id: %d", temp_ptr2->job_id);
+		if ((temp_ptr2)->duration > max_duration)
+			max_duration = temp_ptr2->duration;
+		temp_ptr2 = temp_ptr2->prev; //new jobs at the head of the queue
 	}
-api_call_check:
-	/* Check if call of WF API is associated with this job and create a new event */
-	if (temp_ptr->api_call_time) {
-		new_event = (simulator_event_t *)malloc(sizeof(simulator_event_t));
+	temp_ptr2 = temp_ptr;
+	for (comp = 0; comp < ncomp; comp++) {
+		new_event = (simulator_event_t *)xmalloc(sizeof(simulator_event_t));
 		if(!new_event){
-		error("SIMULATOR: malloc fails for new_event\n");
+			error("SIMULATOR: xmalloc fails for new_event\n");
 			pthread_mutex_unlock(&simulator_mutex);
 			return -1;
 		}
-
-		new_event->job_id = req->job_id;
-		new_event->uid = req->uid;
-		if (temp_ptr->is_delayed_workflow)
-		    new_event->type = WF_API;
-		else
-		    new_event->type = AFTEROK_API;
-		new_event->when = now + temp_ptr->api_call_time;
-		new_event->nodelist = NULL;
+		new_event->job_id = req->job_id+comp;
+		
+		if (temp_ptr2->duration == max_duration) {//only the last hetjob component unlocks this message
+			new_event->type = REQUEST_COMPLETE_BATCH_SCRIPT;
+			new_event->job_id = req->job_id; //apparently only works when the fist component sends it
+		}
+		/* TODO: do nothing or send slurmctld a message?
+		 * sending REQUEST_COMPLETE_BATCH_SCRIPT from component jobid might work
+		 * although I didn't see this kind of behavior running Slurm, but I've seen
+		 * a REQUEST_STEP_COMPLETE msg
+		 */
+		else new_event->type = REQUEST_STEP_COMPLETE;
+		new_event->event_info_ptr = temp_ptr2;
+		new_event->when = now + temp_ptr2->duration;
+		new_event->nodelist = strdup(req->nodes); //TODO: this is the whole jobpack nodes list?
+		new_event->pack_components = ncomp;
 		new_event->next = NULL;
 
 		total_sim_events++;
-		volatile simulator_event_t *node_temp = head_simulator_event;
-		info("SIM: API: Adding new WF event for job %d in the event list for future time %ld", new_event->job_id, new_event->when);
-
-		if(head_simulator_event->when > new_event->when){
-			new_event->next = head_simulator_event;
+		if (!head_simulator_event){
+			info("SIM: Adding new event for job %d when list is empty for future time %ld!", new_event->job_id, new_event->when);
 			head_simulator_event = new_event;
-			pthread_mutex_unlock(&simulator_mutex);
-			return 0;
+		}
+		else {
+			volatile simulator_event_t *node_temp = head_simulator_event;
+			info("SIM: Adding new event for job %d in the event list for future time %ld", new_event->job_id, new_event->when);
+        
+			if (head_simulator_event->when > new_event->when){
+				new_event->next = head_simulator_event;
+				head_simulator_event = new_event;
+			}
+			else {
+				while((node_temp->next) && (node_temp->next->when < new_event->when))
+					node_temp = node_temp->next;
+        
+				if (node_temp->next) {
+					new_event->next = node_temp->next;
+					node_temp->next = new_event;
+				}
+				else
+					node_temp->next = new_event;
+			}
 		}
 
-		while((node_temp->next) && (node_temp->next->when < new_event->when))
-			node_temp = node_temp->next;
+		/* Check if call of WF API is associated with this job and create a new event */
+		if (temp_ptr2->api_call_time) {
+			new_event = (simulator_event_t *)xmalloc(sizeof(simulator_event_t));
+			if(!new_event){
+			error("SIMULATOR: malloc fails for new_event\n");
+				pthread_mutex_unlock(&simulator_mutex);
+				return -1;
+			}
 
-		if(node_temp->next){
-			new_event->next = node_temp->next;
-			node_temp->next = new_event;
-			pthread_mutex_unlock(&simulator_mutex);
-			return 0;
+			new_event->job_id = temp_ptr2->job_id;
+			new_event->uid = req->uid;
+			if (temp_ptr2->is_delayed_workflow)
+			    new_event->type = WF_API;
+			else
+			    new_event->type = AFTEROK_API;
+			new_event->when = now + temp_ptr2->api_call_time;
+			new_event->nodelist = NULL;
+			new_event->next = NULL;
+
+			total_sim_events++;
+			volatile simulator_event_t *node_temp = head_simulator_event;
+			info("SIM: API: Adding new WF event for job %d in the event list for future time %ld", new_event->job_id, new_event->when)
+
+			if(head_simulator_event->when > new_event->when){
+				new_event->next = head_simulator_event;
+				head_simulator_event = new_event;
+			}
+			else {
+				while((node_temp->next) && (node_temp->next->when < new_event->when))
+					node_temp = node_temp->next;
+
+				if(node_temp->next){
+					new_event->next = node_temp->next;
+					node_temp->next = new_event;
+				}
+				else
+					node_temp->next = new_event;
+			}
 		}
-		node_temp->next = new_event;
-        }
-	else debug ("API: This job has no API call time");
+		else debug ("API: This job has no API call time");
+
+		temp_ptr2 = temp_ptr2->prev;
+	}
 	pthread_mutex_unlock(&simulator_mutex);
 	return 0;
 }
@@ -645,6 +674,7 @@ simulator_rpc_batch_job(slurm_msg_t *msg)
 	}
 
 	simulator_add_future_event(req);
+
 
 }
 #endif
@@ -3311,8 +3341,8 @@ _rpc_sim_job(slurm_msg_t *msg)
 
 	info("SIM: Got info for jobid: %u with a duration of %u\n", sim_job->job_id, sim_job->duration);
 
-	if(sim_job->job_id != last_job_id){
-		new = (simulator_event_info_t *)calloc(1, sizeof(simulator_event_info_t));
+	if (sim_job->job_id != last_job_id){
+		new = (simulator_event_info_t *)xmalloc(sizeof(simulator_event_info_t));
 		if(!new){
 			info("SIM: _rpc_sim_job error in calloc\n");
 			return rc;
@@ -3323,9 +3353,13 @@ _rpc_sim_job(slurm_msg_t *msg)
 		new->api_call_time = sim_job->api_call_time;
 		new->is_delayed_workflow = sim_job->is_delayed_workflow;
 		info("API: Job has a API call at start_time + %d", sim_job->api_call_time);
+		pthread_mutex_lock(&event_info_list_mutex);
 		new->next = head_simulator_event_info;
+		if (new->next)
+			new->next->prev = new;
+		new->prev = NULL;
 		head_simulator_event_info = new;
-
+		pthread_mutex_unlock(&event_info_list_mutex);
 		last_job_id = sim_job->job_id;
 	}
 	else{
@@ -3672,7 +3706,7 @@ simulator_rpc_terminate_job(slurm_msg_t *rec_msg)
 	char *node_name;
 	int             rc     = SLURM_SUCCESS;
 	kill_job_msg_t *req_kill    = rec_msg->data;
-	volatile simulator_event_t *temp, *event_sim, *prev;
+	volatile simulator_event_t *temp, *event_sim, *prev = NULL;
 
 	/* First sending an OK to the controller */
 
@@ -3686,13 +3720,19 @@ simulator_rpc_terminate_job(slurm_msg_t *rec_msg)
 
 	event_sim = head_sim_completed_jobs;
 
-	if((head_sim_completed_jobs) && (head_sim_completed_jobs->job_id == req_kill->job_id)){
+	if((head_sim_completed_jobs) && (head_sim_completed_jobs->event_info_ptr->job_id == req_kill->job_id)){
 		head_sim_completed_jobs = head_sim_completed_jobs->next;
 	}else{
+
 		temp = head_sim_completed_jobs;
+		if(!temp){
+			info("SIM: Error, no event found for completed job %d\n", req_kill->job_id);
+			pthread_mutex_unlock(&simulator_mutex);
+			return;
+		}
 
 		while (temp) {
-			if (temp->job_id==req_kill->job_id) {
+			if (temp->event_info_ptr->job_id==req_kill->job_id) {
 				break;
 			}
 			prev=temp;
@@ -3700,25 +3740,11 @@ simulator_rpc_terminate_job(slurm_msg_t *rec_msg)
 		}
 		if (temp) {
 			event_sim=temp;
-			prev->next=temp->next;
+			if (prev)
+				prev->next=temp->next;
 		} else {
-			pthread_mutex_unlock(&simulator_mutex);
-
-			//jobpacks components do not receive batch launch message,
-			//so their end time event is never recorded
-			if (req_kill->pack_jobid || req_kill->pack_jobid != NO_VAL) {
-				info("SIM: no event found, but this is a jobpack");
-				hl = hostlist_create(req_kill->nodes);
-				node_name = hostlist_shift(hl);
-
-				pthread_mutex_lock(&epilogs_mutex);
-				waiting_epilog_msgs++;
-				pthread_mutex_unlock(&epilogs_mutex);
-
-				goto send_resp;	
-			}
-			//if no event found and not a jobpack
 			info("SIM: Error, no event found for completed job %d T2\n", req_kill->job_id);
+			pthread_mutex_unlock(&simulator_mutex);
 			return;
 		}
 	}
@@ -3729,7 +3755,7 @@ simulator_rpc_terminate_job(slurm_msg_t *rec_msg)
 
 	/* With FRONTEND just one epilog complete message is needed */
 	node_name = hostlist_shift(hl);
-send_resp:
+
 	info("SIM: Sending epilog complete message for job %d node %s", req_kill->job_id, node_name);
 	slurm_msg_t_init(&msg);
 
@@ -3746,7 +3772,7 @@ send_resp:
 	waiting_epilog_msgs--;
 	pthread_mutex_unlock(&epilogs_mutex);
 	hostlist_destroy(hl);
-	free((void*)event_sim);
+	xfree(event_sim);
 }
 
 static void

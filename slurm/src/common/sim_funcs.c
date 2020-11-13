@@ -259,9 +259,10 @@ int getpwnam_r(const char *name, struct passwd *pwd,
 	}
 	pwd->pw_name = strdup(name);
 	pwd->pw_gid = sim_getgid(pwd->pw_uid);
-        pwd->pw_gecos = xstrdup("NULL");
-	pwd->pw_dir = xstrdup("/NULL");
-	pwd->pw_shell = xstrdup("/bin/bash");
+	pwd->pw_passwd = NULL;
+	pwd->pw_gecos = NULL;
+	pwd->pw_dir = NULL;
+	pwd->pw_shell = NULL;
 	debug("Found uid %u for name %s", pwd->pw_uid, pwd->pw_name);
 
 	*result = pwd;
@@ -281,9 +282,10 @@ int getpwuid_r(uid_t uid, struct passwd *pwd,
 	}
 	pwd->pw_uid = uid;
 	pwd->pw_gid = sim_getgid(uid);
-        pwd->pw_gecos = xstrdup("NULL");
-	pwd->pw_dir = xstrdup("/NULL");
-	pwd->pw_shell = xstrdup("/bin/bash");
+	pwd->pw_passwd = NULL;
+	pwd->pw_gecos = NULL;
+	pwd->pw_dir = NULL;
+	pwd->pw_shell = NULL;
 	debug("Found name %s for uid %u", pwd->pw_name, pwd->pw_uid);
 
 	*result = pwd;
