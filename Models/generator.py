@@ -22,9 +22,10 @@ import numpy as np
 #from random import uniform
 #seed(1)
 #3k jobs workload: 
-#np.random.seed(42)
+#21% np.random.seed(56) #set perc_wf_jobs=12
+np.random.seed(63) #set perc_wf_jobs=13
 #300 jobs workload:
-np.random.seed(37)
+#np.random.seed(37)
 
 # Cirne base model was fixed so that: 
 # 1) traces are in SWF format, and 
@@ -74,8 +75,8 @@ def assign_jobid(i):
 def sort_jobs_by_arrival_time():
     data.sort(key=lambda x: int(x.split(';')[1]))
 
-def create_template_trace(module,num_nodes,num_jobs,arr_pattern,load):
-    subprocess.call([base_model_path,str(num_nodes),arr_pattern,str(num_jobs),module,"tmp."+module,str(load)])
+def create_template_trace(module,num_nodes,num_jobs,arr_pattern,load,scale):
+    subprocess.call([base_model_path,str(num_nodes),arr_pattern,str(num_jobs),module,"tmp."+module,str(load),str(scale)])
 
 # Label single-/multi-module is written in userid field of SWF trace
 def label_single_multi_jobs(i):
@@ -116,18 +117,21 @@ base_model_path = "cirne/genworkload"
 num_jobs=1000
 arrival_pattern="anl"
 
-load_cm=0.76
-load_esb=0.64
-load_dam=2.5
+#load_cm=0.76
+#load_esb=0.64
+#load_dam=2.5
+load_cm=1
+load_esb=1
+load_dam=1
 
 cm_size=50
 esb_size=75
 dam_size=16
 
 if sys.argv[1] == "create":
-    create_template_trace("cm",cm_size,num_jobs,arrival_pattern,load_cm)
-    create_template_trace("esb",esb_size,num_jobs,arrival_pattern,load_esb)
-    create_template_trace("dam",dam_size,num_jobs,arrival_pattern,load_dam)
+    create_template_trace("cm",cm_size,num_jobs,arrival_pattern,load_cm,1)
+    create_template_trace("esb",esb_size,num_jobs,arrival_pattern,load_esb,1)
+    create_template_trace("dam",dam_size,num_jobs,arrival_pattern,load_dam,2)
 
 ##########################################################################################
 #
@@ -291,10 +295,12 @@ with open(current_dir+"/cirne_modlist_"+str(num_jobs)+"_"+arrival_pattern+"_load
 
 #parameters
 max_wf_jobs = 3
-perc_wf_jobs = 12
+perc_wf_jobs = 13
 is_het = [0] * len(data)
 is_first_het = [0] * len(data)
 use_het=int(sys.argv[2])
+#set the reqtime as the sum of the hetjob components reqtime
+sum_reqtime = 0
 
 #much easier to mange data as a list
 ldata=[]
@@ -362,7 +368,7 @@ while i < len(data):
             for j in range(i,i+ncomp):
                 is_het[j] = ncomp
                 sum_req_time += int(ldata[j][8])
-            if use_het:
+            if use_het and sum_reqtime:
                 #set requested time to the total
                 for j in range(i,i+ncomp):
                     ldata[j][8] = str(sum_req_time)
@@ -378,78 +384,85 @@ else:
 
 with open(current_dir+"/cirne_base_"+str(num_jobs)+"_"+arrival_pattern+"_load_"+str(load_cm)+"_"+str(load_esb)+"_"+str(load_dam)+"_"+tag+".mwf",'w') as mwffile:
     with open(current_dir+"/cirne_base_"+str(num_jobs)+"_"+arrival_pattern+"_load_"+str(load_cm)+"_"+str(load_esb)+"_"+str(load_dam)+"_"+tag+"_api.mwf",'w') as mwffileapi:
-        for i in range(len(data)):
-            mwf = [""] * 42
-            if is_het[i] and use_het:
-                if is_first_het[i]:
-                    mwf[0] = ldata[i][0]
-                    first_het_id = mwf[0]
+        with open(current_dir+"/cirne_base_"+str(num_jobs)+"_"+arrival_pattern+"_load_"+str(load_cm)+"_"+str(load_esb)+"_"+str(load_dam)+"_"+tag+"_std.mwf",'w') as mwffilestd:
+            for i in range(len(data)):
+                mwf = [""] * 42
+                if is_het[i] and use_het:
+                    if is_first_het[i]:
+                        mwf[0] = ldata[i][0]
+                        first_het_id = mwf[0]
+                    else:
+                        mwf[0] = first_het_id
                 else:
-                    mwf[0] = first_het_id
-            else:
-                mwf[0] = ldata[i][0]
-            if is_het[i] == 0:
-                mwf[1] = "1"
-            elif use_het == 1:
-                mwf[1] = str(is_het[i])
-            else:
-                mwf[1] = "1"
-            mwf[2] = "job"+ldata[i][0]
-            mwf[3] = ldata[i][1]
-            mwf[4] = "-1"
-            mwf[5] = ldata[i][8]
-            #number of components submitted at submit time (do we need this?)
-            mwf[6] = "-1"
-            mwf[7] = str(i+1)
-            mwf[8] = "job"+str(i)
-            mwf[9] = "-1"
-            mwf[10] = ldata[i][3]
-            mwf[11] = "0"
-            mwf[12] = "-1"
-            mwf[13] = ldata[i][15]
-            mwf[14] = ldata[i][4]
-            mwf[15] = "1"
-            mwf[16] = "1"
-            mwf[17] = "-1"
-            mwf[18] = "-1"
-            mwf[19] = "-1"
-            #NAM
-            mwf[20] = "-1"
-            mwf[21] = "-1"
-            mwf[22] = "-1"
-            mwf[23] = "-1"
-            mwf[24] = "-1"
-            mwf[25] = "-1"
-            mwf[26] = "-1"
-            mwf[27] = "-1"
-            mwf[28] = "-1"
-            mwf[29] = "-1"
-            mwf[30] = "-1"
-            mwf[31] = "-1"
-            mwf[32] = "-1"
-            mwf[33] = "-1"
-            mwf[34] = "-1"
-            mwf[35] = "-1"
-            mwf[36] = "-1"
-            mwf[37] = "-1"
-            mwf[38] = "-1"
-            mwf[39] = "NA"
-            if is_het[i]:
-                #dependency with prec job
-                if is_first_het[i] == 0:
-                    #precedent job has id == i
-                    if use_het == 0:
-                        mwf[38] = str(i)
-                        mwf[39] = "AFTEROK"
-            if ldata[i][17] == "0":
-                mwf[40] = "-1"
-            else:
-                mwf[40] = ldata[i][17]
-            mwf[41] = ldata[i][19]
-            
-            mwffileapi.write(';'.join(mwf))
-            mwf[41] = "-1\n"
-            mwffile.write(';'.join(mwf))
+                    mwf[0] = ldata[i][0]
+                if is_het[i] == 0:
+                    mwf[1] = "1"
+                elif use_het == 1:
+                    mwf[1] = str(is_het[i])
+                else:
+                    mwf[1] = "1"
+                mwf[2] = "job"+ldata[i][0]
+                mwf[3] = ldata[i][1]
+                mwf[4] = "-1"
+                mwf[5] = ldata[i][8]
+                #number of components submitted at submit time (do we need this?)
+                mwf[6] = "-1"
+                mwf[7] = str(i+1)
+                mwf[8] = "job"+str(i)
+                mwf[9] = "-1"
+                mwf[10] = ldata[i][3]
+                mwf[11] = "0"
+                mwf[12] = "-1"
+                mwf[13] = ldata[i][15]
+                mwf[14] = ldata[i][4]
+                mwf[15] = "1"
+                mwf[16] = "1"
+                mwf[17] = "-1"
+                mwf[18] = "-1"
+                mwf[19] = "-1"
+                #NAM
+                mwf[20] = "-1"
+                mwf[21] = "-1"
+                mwf[22] = "-1"
+                mwf[23] = "-1"
+                mwf[24] = "-1"
+                mwf[25] = "-1"
+                mwf[26] = "-1"
+                mwf[27] = "-1"
+                mwf[28] = "-1"
+                mwf[29] = "-1"
+                mwf[30] = "-1"
+                mwf[31] = "-1"
+                mwf[32] = "-1"
+                mwf[33] = "-1"
+                mwf[34] = "-1"
+                mwf[35] = "-1"
+                mwf[36] = "-1"
+                mwf[37] = "-1"
+                mwf[38] = "-1"
+                mwf[39] = "NA"
+                if is_het[i]:
+                    #dependency with prec job
+                    if is_first_het[i] == 0:
+                        #precedent job has id == i
+                        if use_het == 0:
+                            mwf[38] = str(i)
+                            mwf[39] = "AFTEROK"
+                if ldata[i][17] == "0":
+                    mwf[40] = "-1"
+                else:
+                    mwf[40] = ldata[i][17]
+                mwf[41] = ldata[i][19]
+                
+                #generate delay+api worklodas
+                mwffileapi.write(';'.join(mwf))
+                mwf[41] = "-1\n"
+                #generate delay worklodas
+                mwffile.write(';'.join(mwf))
+                if use_het == 1:
+                    mwf[40] = "-1"
+                    #generate std hetjobs worklodas
+                    mwffilestd.write(';'.join(mwf))
 
 #Loop between single jobs and assign a dependency with the following job. If a dependency is created the following job arrival time is modified to current job arrival time.
 
