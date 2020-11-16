@@ -34,6 +34,8 @@ sed -e s:TOKEN_PATH:$sim_path: \
         "run_command.template" > $sim_path"/slurm_varios/run_command.sh"
 chmod +x $sim_path"/slurm_varios/run_command.sh"
 
+export LD_LIBRARY_PATH=$PWD/workflow_lib:$LD_LIBRARY_PATH
+
 cd $sim_path
 
 sed -e s/{ID_JOB}/$$/ \
