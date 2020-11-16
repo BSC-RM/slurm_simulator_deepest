@@ -9,6 +9,8 @@
 typedef struct simulator_event_info{
     int job_id;
     int duration;
+	int is_delayed_workflow;
+	int api_call_time;
     struct simulator_event_info *next;
 	struct simulator_event_info *prev;
 }simulator_event_info_t;
