@@ -175,7 +175,7 @@ typedef struct connection {
 
 #ifdef SLURM_SIMULATOR
 volatile simulator_event_t *head_simulator_event;
-volatile simulator_event_t *head_sim_completed_jobs;
+volatile simulator_event_t *head_sim_completed_events;
 int    total_sim_events = 0;
 sem_t *sim_sem         = SEM_FAILED;
 sem_t *slurm_sem       = SEM_FAILED;
@@ -761,8 +761,8 @@ _simulator_helper(void *arg)
 			ncomponents = head_simulator_event->pack_components;
 			aux = head_simulator_event;
 			head_simulator_event = head_simulator_event->next;
-			aux->next = head_sim_completed_jobs;
-			head_sim_completed_jobs = aux;
+			aux->next = head_sim_completed_events;
+			head_sim_completed_events = aux;
 			total_sim_events--;
 
 			/* Manage WF API behavior */
@@ -778,14 +778,13 @@ _simulator_helper(void *arg)
 				if (slurm_change_dep(jid_str, event_uid))
 					debug("AFTEROK_API: Error in changing dependency");
 			}
-//			else if (event_type == REQUEST_STEP_COMPLETE) {
+			else if (event_type == REQUEST_STEP_COMPLETE); // {
 //				info("SIM: Sending REQUEST_STEP_COMPLETE for job %d", event_jid);
 //				if (_send_simulated_step_complete_msg(event_jid, SLURM_SUCCESS) != SLURM_ERROR) {
 //					error("SIM: Error sending REQUEST_STEP_COMPLETE");
 //				}
 //			}
-//			else
-			if (event_type == REQUEST_COMPLETE_BATCH_SCRIPT) {
+			else if (event_type == REQUEST_COMPLETE_BATCH_SCRIPT) {
 				info("SIM: Sending REQUEST_COMPLETE_BATCH_SCRIPT for job %d", event_jid);
 				if (_send_complete_batch_script_msg(event_jid, SLURM_SUCCESS, 0) == SLURM_SUCCESS) { 
 					debug("sent");

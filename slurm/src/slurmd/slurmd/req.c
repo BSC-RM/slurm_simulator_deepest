@@ -273,7 +273,7 @@ extern pthread_mutex_t simulator_mutex;
  * suspended at one time. */
 #define NUM_PARALLEL_SUSP_STEPS 8
 extern simulator_event_t *head_simulator_event;
-extern volatile simulator_event_t *head_sim_completed_jobs;
+extern volatile simulator_event_t *head_sim_completed_events;
 extern int total_sim_events;
 
 simulator_event_info_t *head_simulator_event_info;
@@ -523,7 +523,8 @@ int simulator_add_future_event(batch_job_launch_msg_t *req){
 	int comp;
 	int ncomp = req->pack_components == 0 ? 1 : req->pack_components;
 
-	debug3("Received job with %d components", req->pack_components);
+	if (ncomp)
+		debug3("Received job with %d components", ncomp);
 	
 	/* Checking job_id as expected */
 	while (temp_ptr){
@@ -568,7 +569,10 @@ int simulator_add_future_event(batch_job_launch_msg_t *req){
 		 * although I didn't see this kind of behavior running Slurm, but I've seen
 		 * a REQUEST_STEP_COMPLETE msg
 		 */
-		else new_event->type = REQUEST_STEP_COMPLETE;
+		else {
+			new_event->type = REQUEST_STEP_COMPLETE;
+			new_event->job_id = temp_ptr2->job_id;
+		}
 		new_event->event_info_ptr = temp_ptr2;
 		new_event->when = now + temp_ptr2->duration;
 		new_event->nodelist = strdup(req->nodes); //TODO: this is the whole jobpack nodes list?
@@ -616,6 +620,7 @@ int simulator_add_future_event(batch_job_launch_msg_t *req){
 			    new_event->type = WF_API;
 			else
 			    new_event->type = AFTEROK_API;
+			new_event->event_info_ptr = temp_ptr2;
 			new_event->when = now + temp_ptr2->api_call_time;
 			new_event->nodelist = NULL;
 			new_event->next = NULL;
@@ -3718,13 +3723,16 @@ simulator_rpc_terminate_job(slurm_msg_t *rec_msg)
 
 	pthread_mutex_lock(&simulator_mutex);
 
-	event_sim = head_sim_completed_jobs;
+	event_sim = head_sim_completed_events;
 
-	if((head_sim_completed_jobs) && (head_sim_completed_jobs->event_info_ptr->job_id == req_kill->job_id)){
-		head_sim_completed_jobs = head_sim_completed_jobs->next;
+	if((head_sim_completed_events) && 
+		(head_sim_completed_events->event_info_ptr->job_id == req_kill->job_id &&
+		 (head_sim_completed_events->type == REQUEST_COMPLETE_BATCH_SCRIPT ) ||
+		  head_sim_completed_events->type == REQUEST_STEP_COMPLETE)){
+		head_sim_completed_events = head_sim_completed_events->next;
 	}else{
 
-		temp = head_sim_completed_jobs;
+		temp = head_sim_completed_events;
 		if(!temp){
 			info("SIM: Error, no event found for completed job %d\n", req_kill->job_id);
 			pthread_mutex_unlock(&simulator_mutex);
