@@ -305,8 +305,9 @@ sum_reqtime = 0
 #much easier to mange data as a list
 ldata=[]
 #extend data format to include real delay, use 17th field for the req_delay
+#use 20th field to store max_req_time (used in std hetjobs)
 for i in range(len(data)):
-    data[i] = data[i].replace('\n',";-1\n")
+    data[i] = data[i].replace('\n',";-1\n;-1")
     ldata.append(data[i].split(';'))
 i = 0
 while i < len(data):
@@ -362,16 +363,21 @@ while i < len(data):
             iprec = inext
             inext += 1
         sum_req_time = 0
+        max_req_time = 0
         #keep a parallel array with info about hetjobs,  
         #set is_het to the number of components for each component
         if ncomp > 1:
             for j in range(i,i+ncomp):
                 is_het[j] = ncomp
                 sum_req_time += int(ldata[j][8])
-            if use_het and sum_reqtime:
-                #set requested time to the total
+                if int(ldata[j][8]) > max_req_time:
+                    max_req_time = int(ldata[j][8])
+
+            if use_het:
+                #set requested time to the total, this 
                 for j in range(i,i+ncomp):
                     ldata[j][8] = str(sum_req_time)
+                    ldata[j][20] = str(max_req_time)
             #remember first job
             is_first_het[i] = is_het[i]
         i += ncomp
@@ -461,6 +467,9 @@ with open(current_dir+"/cirne_base_"+str(num_jobs)+"_"+arrival_pattern+"_load_"+
                 mwffile.write(';'.join(mwf))
                 if use_het == 1:
                     mwf[40] = "-1"
+                    #use max_req_time for std hetjobs
+                    if is_het[i]:
+                        mwf[5] = ldata[i][20]
                     #generate std hetjobs worklodas
                     mwffilestd.write(';'.join(mwf))
 
