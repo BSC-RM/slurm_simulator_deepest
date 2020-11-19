@@ -19,8 +19,8 @@ mkdir -p "${install_dir}/slurm_varios/log"
 export LIBS=-lrt
 #export CFLAGS="-D SLURM_SIMULATOR -D WF_API"
 #new gcc versions
-#CFLAGS="-D SLURM_SIMULATOR -g0 -O3 -D NDEBUG=1 -fno-omit-frame-pointer -fcommon"
-export CFLAGS="-D SLURM_SIMULATOR -g0 -O3 -D NDEBUG=1
+#export CFLAGS="-D SLURM_SIMULATOR -g0 -O3 -D NDEBUG=1 -fno-omit-frame-pointer -fcommon"
+export CFLAGS="-D SLURM_SIMULATOR -g0 -O3 -D NDEBUG=1"
 
 cd "${slurm_source_dir}"
 
