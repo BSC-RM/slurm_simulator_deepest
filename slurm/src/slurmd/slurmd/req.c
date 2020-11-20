@@ -645,7 +645,6 @@ int simulator_add_future_event(batch_job_launch_msg_t *req){
 					node_temp->next = new_event;
 			}
 		}
-		else debug ("API: This job has no API call time");
 
 		temp_ptr2 = temp_ptr2->prev;
 	}
@@ -3727,8 +3726,8 @@ simulator_rpc_terminate_job(slurm_msg_t *rec_msg)
 
 	if((head_sim_completed_events) && 
 		(head_sim_completed_events->event_info_ptr->job_id == req_kill->job_id &&
-		 (head_sim_completed_events->type == REQUEST_COMPLETE_BATCH_SCRIPT ) ||
-		  head_sim_completed_events->type == REQUEST_STEP_COMPLETE)){
+		 ((head_sim_completed_events->type == REQUEST_COMPLETE_BATCH_SCRIPT ) ||
+		   head_sim_completed_events->type == REQUEST_STEP_COMPLETE))){
 		head_sim_completed_events = head_sim_completed_events->next;
 	}else{
 
@@ -3740,7 +3739,9 @@ simulator_rpc_terminate_job(slurm_msg_t *rec_msg)
 		}
 
 		while (temp) {
-			if (temp->event_info_ptr->job_id==req_kill->job_id) {
+			if (temp->event_info_ptr->job_id == req_kill->job_id &&
+				(temp->type == REQUEST_COMPLETE_BATCH_SCRIPT ||
+				 temp->type == REQUEST_STEP_COMPLETE)) {
 				break;
 			}
 			prev=temp;

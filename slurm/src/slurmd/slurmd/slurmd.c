@@ -753,7 +753,7 @@ _simulator_helper(void *arg)
 
 		while((head_simulator_event) && (now >= head_simulator_event->when)){
 			volatile simulator_event_t *aux;
-			int event_jid, event_uid, event_type, ncomponents;
+			int event_jid, event_uid, event_type, ncomponents, api_error;
 
 			event_jid = head_simulator_event->job_id;
 			event_uid = head_simulator_event->uid;
@@ -763,20 +763,25 @@ _simulator_helper(void *arg)
 			head_simulator_event = head_simulator_event->next;
 			aux->next = head_sim_completed_events;
 			head_sim_completed_events = aux;
+			simulator_event_t *temp = head_sim_completed_events;
+			while (temp) {
+				debug("event: %d", temp->job_id);
+				temp = temp->next;
+			}
 			total_sim_events--;
 
 			/* Manage WF API behavior */
 			if (event_type == WF_API) {
 			debug("WF_API: calling slurm_wf_move_all_res");
-				if(slurm_wf_move_all_res(2, event_jid))
-					debug("WF_API: Error moving reservarions");
+				if((api_error = slurm_wf_move_all_res(2, event_jid)))
+					debug("WF_API: Error moving reservarions, error %d", api_error);
 			}
 			else if (event_type == AFTEROK_API) {
 				char jid_str[1024];
 				sprintf(jid_str, "%u", event_jid);
 				debug("AFTEROK_API: calling slurm_change_dep");
-				if (slurm_change_dep(jid_str, event_uid))
-					debug("AFTEROK_API: Error in changing dependency");
+				if ((api_error = slurm_change_dep(jid_str, event_uid)))
+					debug("AFTEROK_API: Error in changing dependency, error %d", api_error);
 			}
 			else if (event_type == REQUEST_STEP_COMPLETE); // {
 //				info("SIM: Sending REQUEST_STEP_COMPLETE for job %d", event_jid);
