@@ -551,6 +551,7 @@ int simulator_add_future_event(batch_job_launch_msg_t *req){
 		temp_ptr2 = temp_ptr2->prev; //new jobs at the head of the queue
 	}
 	temp_ptr2 = temp_ptr;
+	int same_duration_check = 0;
 	for (comp = 0; comp < ncomp; comp++) {
 		new_event = (simulator_event_t *)xmalloc(sizeof(simulator_event_t));
 		if(!new_event){
@@ -560,7 +561,9 @@ int simulator_add_future_event(batch_job_launch_msg_t *req){
 		}
 		new_event->job_id = req->job_id+comp;
 		
-		if (temp_ptr2->duration == max_duration) {//only the last hetjob component unlocks this message
+		if (temp_ptr2->duration == max_duration &&
+				!same_duration_check) {//only the last hetjob component unlocks this message
+			same_duration_check = 1;
 			new_event->type = REQUEST_COMPLETE_BATCH_SCRIPT;
 			new_event->job_id = req->job_id; //apparently only works when the fist component sends it
 		}
@@ -609,7 +612,7 @@ int simulator_add_future_event(batch_job_launch_msg_t *req){
 		if (temp_ptr2->api_call_time) {
 			new_event = (simulator_event_t *)xmalloc(sizeof(simulator_event_t));
 			if(!new_event){
-			error("SIMULATOR: malloc fails for new_event\n");
+			error("SIM: malloc fails for new_event\n");
 				pthread_mutex_unlock(&simulator_mutex);
 				return -1;
 			}
@@ -3727,13 +3730,12 @@ simulator_rpc_terminate_job(slurm_msg_t *rec_msg)
 	if((head_sim_completed_events) && 
 		(head_sim_completed_events->event_info_ptr->job_id == req_kill->job_id &&
 		 ((head_sim_completed_events->type == REQUEST_COMPLETE_BATCH_SCRIPT ) ||
-		   head_sim_completed_events->type == REQUEST_STEP_COMPLETE))){
+		   head_sim_completed_events->type == REQUEST_STEP_COMPLETE)))
 		head_sim_completed_events = head_sim_completed_events->next;
-	}else{
-
+	else {
 		temp = head_sim_completed_events;
 		if(!temp){
-			info("SIM: Error, no event found for completed job %d\n", req_kill->job_id);
+			info("SIM: Error, no event found for completed job %d", req_kill->job_id);
 			pthread_mutex_unlock(&simulator_mutex);
 			return;
 		}
@@ -3748,11 +3750,11 @@ simulator_rpc_terminate_job(slurm_msg_t *rec_msg)
 			temp=temp->next;
 		}
 		if (temp) {
-			event_sim=temp;
+			event_sim = temp;
 			if (prev)
-				prev->next=temp->next;
+				prev->next = temp->next;
 		} else {
-			info("SIM: Error, no event found for completed job %d T2\n", req_kill->job_id);
+			info("SIM: Error, no event found for completed job %d", req_kill->job_id);
 			pthread_mutex_unlock(&simulator_mutex);
 			return;
 		}
@@ -6912,8 +6914,6 @@ static void _launch_complete_wait(uint32_t job_id)
 		if (j < JOB_STATE_CNT)	/* Found job, ready to return */
 			break;
 		if (difftime(time(NULL), start) <= 9) {  /* Retry for 9 secs */
-			debug2("wait for launch of job %u before suspending it",
-			       job_id);
 			gettimeofday(&now, NULL);
 			timeout.tv_sec  = now.tv_sec + 1;
 			timeout.tv_nsec = now.tv_usec * 1000;
