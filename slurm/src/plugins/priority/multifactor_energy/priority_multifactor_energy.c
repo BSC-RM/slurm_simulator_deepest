@@ -194,7 +194,9 @@ typedef struct energy_info {
 #define P_RUNTIME_WEIGHT 1.5 
 #define P_POWER_WEIGHT     0
 
-int use_energy_prediction = 1;
+int use_energy_prediction = 0;
+int reorder_partitions = 1;
+int take_best_part = 1;
 app_info_t **apps_info;
 uint32_t num_apps;
 int apps_info_init = 0;
@@ -587,10 +589,10 @@ int _cmp_energy_values(const void * a, const void * b)
 	double min_r = MIN(B->best_time, A->best_time);
 	double A_e = A->best_energy / min_e;
 	double B_e = B->best_energy / min_e;
-	double A_r = A->best_time / min_r * 1.5f;
-	double B_r = B->best_time / min_r * 1.5f;
-        //double A_r = A->best_time / min_r;
-        //double B_r = B->best_time / min_r;
+	//double A_r = A->best_time / min_r * 1.5f;
+	//double B_r = B->best_time / min_r * 1.5f;
+        double A_r = A->best_time / min_r;
+        double B_r = B->best_time / min_r;
         debug3("Ae : %lf, Be: %lf, Ar: %lf, Br: %lf", A_e, B_e, A_r, B_r);
 	return (int)((B_e + B_r - A_e - A_r) > 0.0f);
 //	return B->best_value - A->best_value;
@@ -604,10 +606,10 @@ double _fcmp_energy_values(const void * a, const void * b)
 	double min_r = MIN(B->best_time, A->best_time);
 	double A_e = A->best_energy / min_e;
 	double B_e = B->best_energy / min_e;
-	double A_r = A->best_time / min_r * 1.5f;
-	double B_r = B->best_time / min_r * 1.5f;
-        //double A_r = A->best_time / min_r;
-        //double B_r = B->best_time / min_r;
+	//double A_r = A->best_time / min_r * 1.5f;
+	//double B_r = B->best_time / min_r * 1.5f;
+        double A_r = A->best_time / min_r;
+        double B_r = B->best_time / min_r;
         debug3("Ae : %lf, Be: %lf, Ar: %lf, Br: %lf", A_e, B_e, A_r, B_r);
 	return B_e + B_r - A_e - A_r;
 //	return B->best_value - A->best_value;
@@ -746,8 +748,12 @@ int get_best_projection(app_info_t *app, int i_module, energy_info_t **job_energ
 		//		     p_projections[k] * P_POWER_WEIGHT;
 		//job_projections[k] = e_projections[k] + e_projections[k] * 
 		//			(r_projections[k] / r_projections[n_freqs-1] * P_RUNTIME_WEIGHT);
-		//job_projections[k] = /*sqrt*/(pow(e_projections[k] / e_projections[min_e], 2) + pow(r_projections[k] / r_projections[min_r], 2));
-		job_projections[k] = /*sqrt*/(pow(e_projections[k] / e_projections[min_e], 2) + pow(1.5f * r_projections[k] / r_projections[min_r], 2));
+		//EDIT: enable to activate normal evaluation
+                job_projections[k] = /*sqrt*/(pow(e_projections[k] / e_projections[min_e], 2) + pow(r_projections[k] / r_projections[min_r], 2));
+		//EDIT: enable to activate weighted runtime (x1.5)
+                //job_projections[k] = /*sqrt*/(pow(e_projections[k] / e_projections[min_e], 2) + pow(1.5f * r_projections[k] / r_projections[min_r], 2));
+		//EDIT: enable to activate min energy policy (just pick the minimum energy)
+                //job_projections[k] = e_projections[k] / e_projections[min_e];
 		debug3("Freq %lf, energy %lf, time %lf, power %lf", 
 				f_range[k],e_projections[k],r_projections[k],p_projections[k]);
 	}
@@ -981,21 +987,19 @@ static uint32_t _get_priority_internal(time_t start_time,
 			 * TODO: in this way partitions with no enrgy model
 			 * are discarded! */
 			int used_modules = j;
-			if (use_energy_prediction) {
+			if (reorder_partitions) {
 				FREE_NULL_LIST(job_ptr->part_ptr_list);
 				List new_part_list = list_create(NULL);
-				for(j = used_modules - 1; j >= 0; j--) {
-					list_append(new_part_list, job_energy_info[j]->part_ptr);
-				}
+                                j = used_modules - 1;
+                                if (take_best_part)
+                                    list_append(new_part_list, job_energy_info[j]->part_ptr);
+                                else
+				    for(; j >= 0; j--)
+				        list_append(new_part_list, job_energy_info[j]->part_ptr);
 				job_ptr->part_ptr_list = new_part_list;
 			}//Remove second choice
-//                        else {
-//                            FREE_NULL_LIST(job_ptr->part_ptr_list);
-//                            List new_part_list = list_create(NULL);
-//                            list_append(new_part_list, job_energy_info[used_modules - 1]->part_ptr);
-//                            job_ptr->part_ptr_list = new_part_list;
-//                        }
-			int priority_energy;
+			
+                        int priority_energy;
 			int i = 0;
 			part_iterator = list_iterator_create(job_ptr->part_ptr_list);
 			while ((part_ptr = (struct part_record *)
@@ -1007,10 +1011,11 @@ static uint32_t _get_priority_internal(time_t start_time,
 				//search energy priority for this part_ptr
 				for(j = 0; j < used_modules; j++)
 					if(job_energy_info[j]->part_ptr == part_ptr) {
-						priority_energy = j;
-						//priority_energy = 0;
-                                                if ((j == 0) && _fcmp_energy_values((void *) &job_energy_info[0], (void *) &job_energy_info[1]) <= -0.35f)
-                                                    priority_energy -= 1;
+						//priority_energy = j; //EDIT: enable for PriorityInc 
+						priority_energy = 0; //EDIT: enable for Reorder, 1part, and no energy prediction cases 
+                                                //EDIT: enable to activate PriorityInc-V
+                                                //if ((j == 0) && _fcmp_energy_values((void *) &job_energy_info[0], (void *) &job_energy_info[1]) <= -0.35f)
+                                                //    priority_energy -= 1;
 	
 						debug("Energy priority assigned to partition %s: %d", part_ptr->name, priority_energy);
 	
