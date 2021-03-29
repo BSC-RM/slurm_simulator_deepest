@@ -157,7 +157,7 @@ empty="-1\n"
 num_jobs *= 3
 
 
-with open(current_dir+"/cirne_base_"+str(num_jobs)+"_"+arrival_pattern+"_load_"+str(load_cm)+"_"+str(load_esb)+"_"+str(load_dam)+".swf",'w') as basefile:
+with open(current_dir+"/cirne_base_"+str(num_jobs)+"_"+arrival_pattern+"_load_"+str(load_cm)+"_"+str(load_dam)+".swf",'w') as basefile:
     sort_jobs_by_arrival_time()
     for i in range(len(data)):
         if cut_trace_now(i,num_jobs):
@@ -295,7 +295,8 @@ with open(current_dir+"/cirne_modlist_"+str(num_jobs)+"_"+arrival_pattern+"_load
 
 #parameters
 max_wf_jobs = 3
-perc_wf_jobs = 13
+#perc_wf_jobs = 20 #33perc
+perc_wf_jobs = 13 #24perc
 is_het = [0] * len(data)
 is_first_het = [0] * len(data)
 use_het=int(sys.argv[2])
@@ -307,7 +308,7 @@ ldata=[]
 #extend data format to include real delay, use 17th field for the req_delay
 #use 20th field to store max_req_time (used in std hetjobs)
 for i in range(len(data)):
-    data[i] = data[i].replace('\n',";-1\n;-1")
+    data[i] = data[i].replace('\n',";-1\n;-1;-1;-1")
     ldata.append(data[i].split(';'))
 i = 0
 while i < len(data):
@@ -347,15 +348,19 @@ while i < len(data):
             req_delay = int(round(np.random.uniform(0.5,0.9) * float(ldata[iprec][8])))
             #calculate actual delay from duration
             api_call = int(round(np.random.uniform(0.5,0.9) * float(ldata[iprec][3])))
-            if req_delay < api_call:
-                api_call = -1
+#            if req_delay < api_call:
+#                api_call = -1
             ldata[inext][16] = ldata[iprec][0]
             if use_het:
                 ldata[inext][17] = str(req_delay + int(ldata[iprec][17]))
             ldata[iprec][19] = str(api_call)+'\n'
-            
+            #this is the req time for the het_std case, it must contain the req_delay + req_time
+            ldata[inext][21] = str(int(ldata[inext][8]) + int(ldata[inext][17]))
+            #this is the runtime for the het_std case, it must contain the api_call+the runtime
+            ldata[inext][22] = str(int(ldata[inext][3]) + api_call)
+            if iprec > i:
+                ldata[inext][22] = str(int(ldata[inext][22]) + int(ldata[iprec-1][19]))
             #If hetjob set same arrival time of precedent job (also for jobs with deps to keep workloads comparable)
-            ldata[inext][1] = ldata[iprec][1]
             ldata[inext][1] = ldata[iprec][1]
             #r1 = randint(0,99)
             r1 = np.random.randint(0,1000)
@@ -370,13 +375,19 @@ while i < len(data):
             for j in range(i,i+ncomp):
                 is_het[j] = ncomp
                 sum_req_time += int(ldata[j][8])
+                #get max req time for het_std using het_std req_time
                 if int(ldata[j][8]) > max_req_time:
-                    max_req_time = int(ldata[j][8])
-
+                   max_req_time = int(ldata[j][8]) 
+                if int(ldata[j][21]) > max_req_time:
+                    max_req_time = int(ldata[j][21])
+                    if int(ldata[j][22]) > max_req_time:
+                        max_req_time = int(ldata[j][22])
             if use_het:
                 #set requested time to the total, this 
                 for j in range(i,i+ncomp):
+                    #for delay cases
                     ldata[j][8] = str(sum_req_time)
+                    #use this for std het case
                     ldata[j][20] = str(max_req_time)
             #remember first job
             is_first_het[i] = is_het[i]
@@ -467,9 +478,11 @@ with open(current_dir+"/cirne_base_"+str(num_jobs)+"_"+arrival_pattern+"_load_"+
                 mwffile.write(';'.join(mwf))
                 if use_het == 1:
                     mwf[40] = "-1"
-                    #use max_req_time for std hetjobs
+                    #use max_req_time and extended runtime for std hetjobs
                     if is_het[i]:
                         mwf[5] = ldata[i][20]
+                        if ldata[i][22] != "-1":
+                            mwf[10] = ldata[i][22]
                     #generate std hetjobs worklodas
                     mwffilestd.write(';'.join(mwf))
 
